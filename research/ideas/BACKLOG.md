@@ -487,3 +487,30 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
   - The same comparison runs on ΔC3 for perception.
 - cost: **needs-human** (a new data config on main). ~0.1 GPU-h eval.
 - status: needs-human: new diag config
+
+## IDEA-037 Teacher-forced likelihood margin: true vs perturbed Task B answer, normal vs swap image (VoE-style image-dependence test)
+- source: research/literature/2025_vjepa_intuitive_physics.md
+- background: violation-of-expectation compares the model's surprise on a possible vs an impossible outcome. Our none/blank/swap ablations break perception and parsing (zero-shot `none` gives no parseable output, exp002), so they conflate perception with dynamics.
+- change: eval-only, one change at scoring time. Teacher-force two Task B answers and record the summed token log-likelihood: the GT answer and a perturbed answer (GT centres with the pushed object left at its t=0 position, i.e. "static"). Compute the margin m = logP(GT) - logP(static), under the normal image and under a swapped image.
+- discriminates: m(normal) > m(swap) per episode means the model's Task B distribution uses the scene to prefer true motion. m near 0 on val_ood_forces means it does not separate pushed-moves from not-moving. No parsing needed, so it works on zero-shot too.
+- cost: ~0.5 day code (scoring loop, no generation), ~0.1 GPU-h. Needs an exp000 adapter (exp005 repro).
+- risk: digit-token likelihood is dominated by formatting tokens; compare only coordinate tokens, and report on val_id first.
+- status: proposed
+
+## IDEA-038 SFT-length sweep: evaluate intermediate checkpoints of the exp000 recipe on the OOD splits (Task A and B)
+- source: research/literature/2025_sft_memorizes_rl_generalizes.md
+- background: Chu et al. report that scaling SFT lowers visual recognition and OOD performance. exp000 Task A degrades only on val_ood_config (0.136 vs 0.016-0.024), and the 100-episode smoke SFT overfit (loss 0.6 to 0.02).
+- change: in the already-required exp005_exp000_repro re-train, save LoRA checkpoints at ~1/4, 1/2 and the final step (single change: checkpoint saving, no recipe change), then eval each on val_ood_* and the diag splits.
+- discriminates: if val_ood_config Task A / B error is lowest at an early checkpoint, SFT length (over-fitting) contributes and early stopping or a regulariser is a cheap lever. If flat or monotonically improving, the config failure is not an SFT-length effect.
+- cost: nearly zero extra training; 3 extra eval-only runs ~0.2 GPU-h each. Needs a harness change to save checkpoints (planner decision on whether it counts as changing exp005).
+- risk: the learning-rate schedule makes early checkpoints not equivalent to short runs.
+- status: proposed
+
+## IDEA-039 Small GRPO/PPO stage on Task B with a distance reward, from a lightly-trained SFT checkpoint
+- source: research/literature/2025_sft_memorizes_rl_generalizes.md
+- background: Chu et al. find RL generalises OOD where SFT does not, but on symbolic tasks with exact verifiers; 2602.06033 finds RL from interaction does not generalise on physics. Chu also finds RL cannot rescue an overfit SFT checkpoint.
+- change: one change: continue from an early checkpoint (see IDEA-038) with RL, reward = negative mean Euclidean target error (parse failure = large penalty), no other change.
+- discriminates: whether OOD val error improves beyond SFT for equal total steps on val_ood_config and val_ood_forces.
+- cost: high (days of engineering, several GPU-h). Not before IDEA-038 and the geometry levers (IDEA-014/016).
+- risk: a geometric blind spot (config) is unlikely to be fixed by reward shaping; continuous reward is closer to a loss than a pass/fail rule.
+- status: proposed (low priority)

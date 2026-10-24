@@ -1,0 +1,51 @@
+id: exp005_exp000_repro
+# Re-train of exp000 on the new GPU box (nc-10-1-1) after the old box went offline and the exp000
+# adapter was lost (STATE.md HUMAN NOTE 2026-10-24). Zero intentional change: same train_config,
+# style, ablations and seed as exp000_sft_baseline; only the experiment id differs.
+# Purpose: (1) check that the new box / regenerated data (RGB +-1/255 noise) reproduces exp000's
+# numbers within noise; (2) produce the adapter that exp004 needs (exp004 depends on this run).
+hypothesis: >
+  Re-training exp000 unchanged on the new box reproduces exp000's val OOD target mean (0.3136)
+  within the reproduction tolerance (|diff| <= 0.010 m, i.e. 2x improvement_threshold, allowing for
+  GPU non-determinism and the +-1/255 RGB render noise), with the same ordering of per-split results
+  (forces and objects beat static, config worse than static) and image_dependence_gap within
+  0.331 +/- 0.03. Direction: no change vs exp000.
+change: none (re-run of exp000 under a new id on the new box; no code, config or data-config change)
+baseline: exp000_sft_baseline
+kind: train
+train_config: configs/sft_qwen3vl2b.yaml
+style: center
+ablations: [none, blank, swap]
+budget_hours: 3
+seed: 0
+# Same as exp000 (actual ~1.4 GPU-h on the old box; the GPU may be shared, so keep the 3 h budget).
+
+implementation:
+  - >
+    No code change. Use a fresh worktree off current main (includes the d4de761 executor fix, so
+    jobs run the snapshot code). Only this spec.yaml is added.
+  - >
+    Do not edit configs/sft_qwen3vl2b.yaml, the style, the seed or the ablation list. Compare against
+    exp000 from the numbers in research/experiments/exp000_sft_baseline/report.md and STATE.md
+    (the exp000 predictions are gone, so `compare exp005 exp000` is unavailable; use results.md and
+    metrics.json of exp005 against the recorded numbers).
+  - >
+    Run python3 scripts/check_spec.py on the spec, commit, and submit. After the run, record the
+    adapter path (expected /var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter, confirm
+    from job.log) in the report, because exp004's lora: points at it.
+
+success_criterion:
+  primary_metric: >
+    REPRODUCED if val OOD target mean is within 0.3136 +/- 0.010 (exp000: 0.314, CI [-0.075,-0.056]
+    vs static 0.379), per-split Task B target means are within 0.015 of exp000's (objects 0.161,
+    forces 0.510, config 0.269), val_id target mean within 0.015 of 0.155, Task A val_id within
+    0.005 of 0.016, parse_rate_min 1.000, and image_dependence_gap within 0.331 +/- 0.03.
+  objective_link: >
+    Does not target the primary metric. It restores the exp000 reference adapter, without which exp004
+    and every later exp000-derived diagnostic (IDEA-025/026, 002) cannot run, and it quantifies
+    run-to-run noise on the new box.
+  if_it_fails: >
+    If the primary metric drifts by more than 0.010, the new stack/box or the regenerated data changes
+    SFT outcomes. Report the drift (do not hide it), treat exp005 as the new reference for all later
+    comparisons (not exp000), and tell the human. Use the drift size as the seed-noise floor when
+    judging improvement_threshold. If it only moves within 0.005 to 0.010, flag as marginal.

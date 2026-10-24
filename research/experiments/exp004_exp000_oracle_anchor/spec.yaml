@@ -26,7 +26,11 @@ change: >
   split. center generation and the pred/normal.jsonl records stay byte-identical to main.
 baseline: exp000_sft_baseline
 kind: eval_only
-lora: /var/tmp/toyi/wm/experiments/exp000_sft_baseline/model/adapter
+# DEPENDENCY: the exp000 adapter was lost with the old box. This is the exp005_exp000_repro adapter
+# (exp000 re-trained unchanged). exp004 must not be submitted until exp005 is done and its adapter
+# path is confirmed from exp005's job.log. Reproduction targets below are exp000's recorded numbers;
+# if exp005 drifted from exp000, re-anchor (ii)/(iii) on exp005 and exp005:ownstatic-free numbers.
+lora: /var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter
 style: center
 # `none` is mandatory (image_dependence_gap raises on NaN, exec.py:329-334). blank/swap are not needed.
 ablations: [none]
