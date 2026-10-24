@@ -514,3 +514,30 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: high (days of engineering, several GPU-h). Not before IDEA-038 and the geometry levers (IDEA-014/016).
 - risk: a geometric blind spot (config) is unlikely to be fixed by reward shaping; continuous reward is closer to a loss than a pass/fail rule.
 - status: proposed (low priority)
+
+## IDEA-040 Training-answer prior baseline (Chance-Frequency analogue) as a leaderboard row, Task A and Task B
+- source: research/literature/2024_thinking_in_space.md
+- background: VSI-Bench scores blind models against a "Chance (Frequency)" baseline (average 34.0), and shows priors alone can look like skill (blind LongVILA-8B 47.5 on object count by answering "2"). We only have `static` (oracle t=0 perception) and the none/blank/swap ablations of an image-trained adapter, which are not a prior baseline. Related to IDEA-032 (constant-centre, zero-shot only) and IDEA-008 (displacement prior on forces).
+- change: one change, no GPU: fit on the training episodes the best image-free predictor from the prompt alone (shape/colour names, K, impulse text): (a) the global mean camera-frame centre per object slot, (b) a ridge/kNN regressor on prompt features to the answer. Report Task A and Task B on val_id and all val_ood_* and diag splits with the existing paired-bootstrap `compare`.
+- discriminates: how much of exp000's val_id Task B gain (0.155 vs static 0.265) and of its OOD gain on val_ood_forces (0.510 vs 0.664) is reachable without the image. If the prior beats static on forces, the exp000 forces gain is partly a text/training prior (links to IDEA-008, IDEA-025).
+- cost: ~0.5 day, no GPU.
+- risk: with a random camera pose the camera-frame mean prior is weak, so it may only be a floor; report it anyway.
+- status: proposed
+
+## IDEA-041 Blind-trained control arm: same exp000 recipe with no image in training and test
+- source: research/literature/2024_thinking_in_space.md
+- background: exp000's test-time none/blank/swap ablations (0.486/0.472/0.400 on val_id, all worse than static 0.265) break an adapter that was trained to read image tokens, so they overstate or understate dependence on the image. VSI-Bench's blind protocol is test-time only on off-the-shelf models; for a fine-tuned model the clean version is to train blind.
+- change: one change relative to exp000: remove the image from the input in both training and evaluation (everything else identical, text prompt with shape/colour/K/impulse kept). Define the image-dependence gap as blind-trained error minus exp000 error per split.
+- discriminates: the real value of the image to Task A and Task B per split, and whether val_ood_config's lost dynamics gain is an image problem (the blind arm would then be roughly equal to exp000 there).
+- cost: one re-train, ~1.4 GPU-h (same as exp005) plus ~0.3 GPU-h eval. Needs the torchvision fix first. Lower priority than IDEA-040 which is free.
+- risk: blind arm may collapse to the mean answer, which is the informative outcome; compare with IDEA-040 to check consistency.
+- status: proposed
+
+## IDEA-042 Estimated-depth variant of IDEA-015: Depth-Anything-V2 metric depth lookup at the GT 2D centre, per split
+- source: research/literature/2024_depth_anything_v2.md
+- background: IDEA-015 uses GT depth (oracle). SD-VLM and Jiang et al. use predicted depth; Depth Anything V2 is the standard source (metric-indoor fine-tune on Hypersim). No paper measured it on tabletop scenes at ~1 m or across 12-60 degrees elevation.
+- change: one change, eval-only, no training: run DA-V2 metric (indoor) on the val RGB renders; at the GT projected object centre take the median predicted depth over the GT mask pixels, unproject with K, add a half-extent offset along the ray as in IDEA-015. Compare to exp000 Task A and to the GT-depth oracle per split (val_id, objects, forces, config, diag_elev/count/corner).
+- discriminates: whether a frozen RGB-only geometry model degrades on val_ood_config like exp000 (0.136 vs 0.016-0.024). If it also degrades, depth ambiguity at low elevation or occlusion is the cause and depth injection (IDEA-020) from estimated depth will not fix it. If it stays near the id level, a depth route is promising. Subsumes the Depth-Anything half of IDEA-022 (error vs elevation).
+- cost: ~0.5 day, ~0.2 GPU-h. Should not need torchvision, but this is unverified; the HF checkpoint names for the metric models are unverified.
+- risk: metric depth from a model trained on real/Hypersim indoor scenes may be biased in scale on our renders; report the bias (median ratio to GT) separately from the spread.
+- status: proposed
