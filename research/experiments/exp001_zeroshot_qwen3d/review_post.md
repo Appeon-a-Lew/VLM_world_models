@@ -61,3 +61,15 @@ Task B: normal 1.000 on every split, swap 0.994 on val_id, none 0.000. Task A: o
 ## Backlog / claims
 - BACKLOG: IDEA-028 (exp001 pred read-out: per-mode missing/label rates, matched-only error, per-axis correlation, constant prior) and IDEA-029 (op_log filter fix, needs-human). IDEA-024 gets a priority note.
 - CLAIMS: added C-003 (tentative): the zero-shot qwen3d pipeline is worse than static and than exp000 on every val OOD split, with all CIs excluding 0. The swap < normal result is single-split and its cause is unresolved, so it is recorded only as a caveat, not as a claim.
+
+---
+
+## Addendum (2026-10-24, reviewer): exp001 is invalid as specified
+- **What happened.** Per the HUMAN NOTE in `research/STATE.md`, the executor ran every job from MAIN until `d4de761`. `python -m` put cwd first on sys.path, so jobs used main's `physwm`. exp001 therefore ran **main's** `infer.py`, with a 48-token/object cap and no stats print. It did not run the reviewed snapshot (`0776d91`), with its 128-token qwen3d cap and per-split parse/missing/truncation logging.
+- **Consequences for this review.**
+  - The numbers checked above are correct readings of `results` and `compare`. They describe main's harness, not the spec.
+  - The verdicts are void as results of the spec: (B) "supported at pipeline level" and (A) "rejected at harness level". That includes the swap-beats-normal CI and the val_ood_config Task A median of 1.000. That median is plausibly the truncation the pre-review predicted (review_pre §1: 240/288 tokens for 4/5 objects against about 260/325 needed). The alternative explanations in "Ruling on issue 2" become hypotheses for exp002. They are not findings.
+  - This review argued "with a 688-token cap for 5 objects, truncation is not the obvious cause". That argument is **wrong**: the cap that actually ran was 288.
+- **IDEA-029's premise was wrong.** The stats lines were missing from job.log because they were never printed. The `op_log` tqdm filter (`exec.py:358`) was not hiding them. The outbox request `exp001_joblog_missing_rate.md` is answered by the HUMAN NOTE: there are no rates to recover. IDEA-029 is rejected in BACKLOG.
+- **Claims.** C-003 is marked withdrawn (invalid as specified) in `research/paper/CLAIMS.md`. Its original text is kept, with a link to this addendum and the STATE note. C-001 and C-002 (exp000) are unaffected, since exp000 made no code change.
+- **Re-test.** exp002_zeroshot_qwen3d_rerun: same spec, same harness hunk, run from the snapshot. Pre-review APPROVE (`research/experiments/exp002_zeroshot_qwen3d_rerun/review_pre.md`). Its job.log stats lines are the positive control that the snapshot ran.
