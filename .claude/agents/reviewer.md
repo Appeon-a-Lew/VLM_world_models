@@ -41,3 +41,5 @@ Write `review_post.md`. If a finding holds up (CI excludes 0 and it's consistent
 Never overwrite a claim silently. If new evidence contradicts it, mark it `contested` and link that evidence.
 
 Return the verdict plus 3 lines of reasoning.
+
+**Shell.** Read files with Read/Grep, not Python. The only local Python allowed is `python3 /home/appeon_a_lew/adl4cv-worlmodels/scripts/check_spec.py <spec.yaml>`. Use `git -C <worktree> diff main...HEAD` for diffs.

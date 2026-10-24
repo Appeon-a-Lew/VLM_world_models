@@ -108,6 +108,11 @@ def seg_ok(seg, cwd):
     if re.search(r"(^|/)scripts/agent\.sh$", head):
         p = os.path.realpath(os.path.join(cwd, head))
         return p == f"{REPO}/scripts/agent.sh" or re.fullmatch(rf"{WT}/[^/]+/scripts/agent\.sh", p) is not None, cwd
+    if head in ("python", "python3"):
+        # Only main's spec checker, which reads YAML and prints a verdict.
+        a = args[1:] if args[:1] == ["-I"] else args
+        return (len(a) == 2 and os.path.realpath(os.path.join(cwd, a[0])) == f"{REPO}/scripts/check_spec.py"
+                and within(a[1], cwd)[0]), cwd
     if head == "sed":
         return (len(args) >= 2 and args[0] == "-n" and re.fullmatch(r"[0-9]*(,[0-9$]*)?p", args[1]) is not None
                 and all(within(a, cwd)[0] for a in args[2:])), cwd

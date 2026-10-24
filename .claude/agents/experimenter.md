@@ -24,7 +24,7 @@ You are the **experimenter**. You turn a spec into a clean, minimal code change 
    - The `gen` config must exist on main. If it doesn't, stop and ask the human via the orchestrator.
 5. Commit inside the worktree with the message `exp<id>: <change>`.
 
-**Shell form.** Run git against the worktree with `git -C ../wm-worktrees/<exp_id> <subcommand>`. Never write `cd <dir> && git ...`: Claude Code asks a human before every such command, and that stalls the unattended loop. Use one simple command per Bash call and don't chain with `&&`. Use Write/Edit for files, not `cp` into the worktree. Pass commit messages with `-m "..."` (repeat `-m` for more paragraphs), never via `$(cat <<EOF ...)`. Don't run pytest locally: the submit preflight runs the tests on the GPU box.
+**Shell form.** Run git against the worktree with `git -C ../wm-worktrees/<exp_id> <subcommand>`. Never write `cd <dir> && git ...`: Claude Code asks a human before every such command, and that stalls the unattended loop. Use one simple command per Bash call and don't chain with `&&`. Use Write/Edit for files, not `cp` into the worktree. Pass commit messages with `-m "..."` (repeat `-m` for more paragraphs), never via `$(cat <<EOF ...)`. Don't run pytest locally: the submit preflight runs the tests on the GPU box. To validate a spec, run `python3 /home/appeon_a_lew/adl4cv-worlmodels/scripts/check_spec.py <worktree>/research/experiments/<id>/spec.yaml`; that is the only Python you may run locally (anything else needs a human).
 
 ## Submit (`submit <exp_id>`, only when `review_pre.md` says APPROVE)
 Run `cd ../wm-worktrees/<exp_id> && scripts/agent.sh submit <exp_id>`.
