@@ -24,10 +24,15 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 
 ## Queue
 1. exp001_zeroshot_qwen3d (eval only): running since 2026-10-24 (commit 0776d91; pre-review APPROVE round 2). Report must quote per-split parse/missing/truncation rates from the job log; truncation_rate is an upper bound.
-2. Cheap diagnostics from the exp000 review (IDEA-006/007/008/009), mostly analysis or tooling, not GPU
+2. Cheap diagnostics from the exp000 review (IDEA-006/007/008), mostly analysis or tooling, not GPU. IDEA-009 done by human; IDEA-017 unblocked (diag splits exist; exp000 numbers need an eval_only spec with the exp000 adapter).
+
+## Tooling (human, 2026-10-24)
+- `compare` now reports `per_split_ci95` / `per_split_verdict`, takes `--splits` (any val_* or val_diag_* split), `--task A|B`, and `exp_id:mode` for ablations. Use it for exp001's Task A normal-vs-swap criterion in addition to the fixed 0.05 m margin.
+- Diagnostic splits `val_diag_elev`, `val_diag_count`, `val_diag_corner` (300 episodes each) are inferred in every job and listed in results.md, not in the primary metric.
+- Qwen3-VL bbox_3d centre/frame/units match our parser (camera frame, metres). Our qwen3d prompt is not Qwen's native template (adds K, frame sentence, multiple objects per query); exp001 measures "Qwen3-VL with our prompt" (IDEA-023).
 
 ## Open questions
-- Why does exp000 fail on val_ood_config: camera elevation, object count / omission (missing_rate), or cluster dynamics? (IDEA-006, IDEA-007; IDEA-017 needs a human for seed ranges.)
+- Why does exp000 fail on val_ood_config: camera elevation, object count / omission (missing_rate), or cluster dynamics? (IDEA-006, IDEA-007; IDEA-017 now runnable via val_diag_elev/count/corner with an eval_only spec on the exp000 adapter.)
 - Does exp000 use the stated impulse on val_ood_forces, or does it predict training-typical motion? (IDEA-008)
-- Are the per-split differences outside the noise? There are no per-split CIs yet (IDEA-009).
+- Are the per-split differences outside the noise? `compare` now gives per-split CIs (IDEA-009 done); exp000 per-split CIs not yet computed.
 - If the camera turns out to be the cause, which geometric input fixes it: per-patch xyz (IDEA-013), uv + depth output (IDEA-014), camera pose text (IDEA-016), or K-varying crops (IDEA-019)?
