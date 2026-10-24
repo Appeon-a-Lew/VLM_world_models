@@ -122,7 +122,10 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: on val_ood_config, perception-only failure (SFT-B well below own-static) vs a dynamics failure as well (SFT-B ≈ own-static), and an object-omission artefact with 4–5 objects (missing_rate > 0).
 - note (planner, 2026-10-24): a `missing_rate` column in results.md would need an edit to pinned exec.py. `summarize` already computes it (metrics.py:85), so print it per split/task to job.log from worktree infer.py instead. Own-static works without any pinned change: a derived `pred/normal_ownstatic.jsonl` (Task A objects copied into the Task B records) is scored automatically.
 - note (planner, round 3): name the file `pred/ownstatic.jsonl`. `compare` accepts only `exp_id:mode` with mode matching `[a-z]*` (exec.py:374), so an underscore would make it unreachable for paired CIs.
-- status: planned: exp003_exp000_diag_eval, as declared instrumentation riding along with IDEA-017. It covers the derived ownstatic.jsonl and per-split, per-task stats lines (missing_rate) in job.log. center generation and the normal.jsonl records are unchanged.
+- status: done: exp003_exp000_diag_eval (2026-10-24).
+  - Task B beats own-static on all 7 splits (C-007).
+  - On config, own-static − static is +0.056 [0.048, 0.065], and the dynamics gain falls to −0.028 (val_id −0.113).
+  - missing_rate is 0.000 everywhere for exp000.
 
 ## IDEA-007 Single-factor breakdown of val_ood_config
 - source: review of exp000_sft_baseline
@@ -187,7 +190,11 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - note (planner, 2026-10-24): seeds are not actually the blocker. `op_gen` accepts `dev_*` splits with seeds outside [1M, 9M), e.g. ≥ 9,000,000 (exec.py:417-428). The real blockers: (1) `op_gen` only takes configs from main's `configs/`, so three new single-factor sim configs must land on main; (2) pinned `evaluate_experiment` loads only `validation_splits` episodes (exec.py:295-296), so predictions on `dev_*` splits would be silently skipped. Scoring them needs a pinned change, or unpinned scoring in worktree code, which a human should approve.
 - status: unblocked (human, 2026-10-24). Splits `val_diag_elev` (elevation 12–25° only), `val_diag_count` (4–5 objects only) and `val_diag_corner` (corner cluster with min_gap 0.01 only), 300 episodes each, configs `configs/sim_diag_*.yaml`, policy `data.diagnostic_splits`. Every job now runs inference on them and lists them in results.md (not in the primary metric); `compare --splits` gives CIs. To get exp000 numbers, plan an eval_only spec with `lora: /var/tmp/toyi/wm/experiments/exp000_sft_baseline/model/adapter`.
 - note (planner, 2026-10-24, round 2): ranked #2. It is the next spec after exp002 (suggested id exp003_exp000_diag_eval). The change is none: same adapter, `style: center`, `ablations: [none]`. Optional ride-along: the IDEA-006 own-static derived file, declared in the spec.
-- status: planned: exp003_exp000_diag_eval (round 3). Decision rule fixed in the spec: share R_f = (D_f − D_val_id) / (D_config − D_val_id) of the Task B diff vs static. A factor is implicated if R_f ≥ 0.5 and its CI is separable from val_id; it is cleared if R_f ≤ 0.25.
+- status: done: exp003_exp000_diag_eval (2026-10-24). The hypothesis is FALSIFIED, point-estimate only: R_elev 0.417 [0.144, 0.705], R_count 0.273, R_corner 0.396.
+  - All three factors are PARTIAL.
+  - Outcome (5) "diffuse", point-estimate only (the sum interval [0.38, 1.83] doesn't separate it from (4)).
+  - CI-robust: no single factor reproduces the failure (C-006).
+  - Follow-ups: IDEA-034/035 (cheap discriminators), IDEA-036 (two-factor split, needs a human).
 
 ## IDEA-018 LoRA on the vision encoder too
 - source: research/literature/2025_limits_of_finetuning.md
@@ -381,3 +388,50 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: about 0.5 day of code (assistant-prefix forcing in worktree infer.py), about 0.15 GPU-h after IDEA-002's SFT.
 - risk: the forced prefix uses GT, so the model never has to be consistent with its own (possibly wrong) centres. Report it only as a labelled oracle, never as a model result.
 - status: proposed
+- note (reviewer, review of exp003_exp000_diag_eval): this diagnoses an IDEA-002 *model*, not exp000. It cannot settle whether exp000's config loss is dynamics. For exp000, use IDEA-034.
+
+## IDEA-034 Oracle-anchored implied displacement for exp000 (second decomposition path, derived)
+- source: review of exp003_exp000_diag_eval
+- background:
+  - exp003 split the config shift (0.139) along one path, oracle → own perception (C3) → own dynamics (G): perception 0.054, dynamics 0.085.
+  - Errors are Euclidean. For example, config Task A target error is 0.133, yet it costs only 0.056 in own-static Task B error. So the shares depend on the path, and the conservative intervals overlap: ΔG [0.057, 0.116] vs ΔC3 [0.045, 0.063].
+  - The other path, oracle perception plus the model's dynamics, is missing for exp000. IDEA-033 needs an IDEA-002 model.
+- change: a derived pred file, `pred/oracleanchor.jsonl` (stem matches `[a-z]*`).
+  - For each episode and object, the Task B position is GT_t0 + (B̂ − Â), where Â and B̂ are exp000's own Task A and Task B answers.
+  - This is exp000's implied displacement, re-anchored on oracle t=0. It is privileged and diagnostic only, and must never be written to normal.jsonl.
+  - It needs a job that re-runs the exp000 adapter (bit-reproducible, C-005) with the derived write added, ~0.2 GPU-h. It would be CPU-only if a derive-only job path existed.
+- discriminates (paired `compare`, per split val_id / config / diag):
+  - `oracleanchor` vs `static` is dynamics skill with oracle perception. If config ≈ val_id, the config loss lives in perception or its interaction with motion, which favours the geometry levers. If config stays far below val_id, it is a real dynamics loss, which favours IDEA-002.
+  - `normal` vs `oracleanchor` is the perception part on the other path. Averaging the two paths gives a Shapley-style share.
+- risk: if Â and B̂ have *inconsistent* perception errors (separate generations), B̂ − Â carries perception noise. Check this with unmoved objects: their implied displacement should be ≈ 0, as exp003's Task B vs own-static unmoved_mean suggests (0.132 vs 0.134 on config).
+- status: proposed
+
+## IDEA-035 Contact stratification of exp000's dynamics gain: lost skill vs harder multi-body physics (derived)
+- source: review of exp003_exp000_diag_eval
+- background:
+  - exp003's dynamics skill per metre of target motion is K = target_skill(:normal) − target_skill(:ownstatic): val_id 0.424, elev 0.332, count 0.346, corner 0.237, config 0.116.
+  - Config and corner cluster objects, and config has 4–5 of them. The target may hit neighbours more often, and multi-body outcomes are harder at any viewpoint.
+  - "Lost dynamics skill" and "harder physics" predict the same drop in K.
+- change: derived pred files from the exp000 adapter's preds.
+  - Using GT metadata, define the "isolated" subset as the episodes where no non-target moves by more than MOVED_THRESH (as in IDEA-031).
+  - Write `pred/isonormal.jsonl` (normal records on isolated episodes, own-static records elsewhere). `compare … :isonormal … :ownstatic` then gives N/n_iso × G on the isolated subset with a CI. `compare` scores missing episodes as unparsed (exec.py:384-390), so subset-only files would be diluted by penalties.
+  - Write the complement `pred/contnormal.jsonl` the same way.
+  - Report n_iso per split. It can share a job with IDEA-034 and IDEA-031.
+- discriminates:
+  - Isolated-target K on config ≈ val_id's means the config dynamics loss is contact or multi-body, and IDEA-002 is unlikely to fix it.
+  - Isolated K also drops on config means a viewpoint- or layout-conditioned dynamics loss.
+- risk: the isolated fraction may be small on config or corner, which gives wide CIs. Report the fraction first.
+- status: proposed
+
+## IDEA-036 Two-factor diag split elev × corner on the exp000 adapter (diffuse vs interaction)
+- source: review of exp003_exp000_diag_eval
+- background:
+  - exp003 cannot tell outcome (5) "diffuse" (Σ R_f = 1.086) from (4) "interaction": the conservative Σ interval is [0.38, 1.83].
+  - On the perception side the single-factor costs look super-additive (Σ ΔC3 0.042 vs config 0.054). On the dynamics side they look sub-additive (Σ ΔG 0.109 vs 0.085). Both are point estimates.
+  - Elev × corner is the plausible occlusion pair: a low camera plus a tight cluster. It also has the two largest single R_f.
+- change: a human-authored `configs/sim_diag_elevcorner.yaml` (sim_train with elevation and corner changed, count unchanged), 300 episodes from seeds outside every reserved range, then an eval-only exp000 re-run as in exp003.
+  - R_{elev+corner} near R_elev + R_corner (0.81) means additive.
+  - R_{elev+corner} near 1 (config-like) with count's 0.27 still missing means interaction.
+  - The same comparison runs on ΔC3 for perception.
+- cost: **needs-human** (a new data config on main). ~0.1 GPU-h eval.
+- status: needs-human: new diag config

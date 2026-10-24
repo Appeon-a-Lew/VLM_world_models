@@ -35,19 +35,22 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
   - `none` yields no parseable output, so `image_dependence_gap` is uninterpretable zero-shot. Use swap.
   - val_ood_config Task A is 0.972 with missing 0.017: a real pipeline-level error, not truncation.
   - Raw Task A on the diag splits: count 0.887, elev 0.771, corner 0.519, against val_id 0.564. This may reflect distance from the model's default output rather than perception (IDEA-032 constant-centre baseline).
+- exp003 (exp000 adapter on the diag splits; reproduces exp000 bit-exactly, C-005):
+  - No single config factor reproduces exp000's config failure. Every single-factor split beats static (elev −0.053, count −0.072, corner −0.055), while config is +0.028 [0.013, 0.042] (C-006).
+  - Shares of the config shift: R_elev 0.417, R_count 0.273, R_corner 0.396. All three are partial, and the result is point-estimate "diffuse".
+  - exp000 Task A perception: count 0.019 (no degradation, C-008 tentative), elev 0.082, corner 0.078, config 0.136.
+  - Task B beats own-perception static on all 7 splits (C-007).
+  - On config, the own-perception cost is +0.056 [0.048, 0.065] (CI-solid). The dynamics gain falls from −0.113 (id) to −0.028. Motion-normalised skill K is 0.424 (id) vs 0.116 (config). Which part is larger isn't CI-separable.
+  - missing_rate is 0.000 everywhere for exp000.
 - `compare` weights each episode, while results.md all_mean weights each object. They can differ by several cm, e.g. exp002 Task A val_id 0.493 vs 0.564.
 - Until d4de761, all jobs ran main's `physwm`, not the snapshot. Any earlier experiment with a code change must be re-run. exp000 had none, so it is valid.
 - `sim_ood_config` changes 3 factors at once: camera elevation 12–25° (train 30–60°), 4–5 objects (train 1–3), corner cluster. The intrinsics in the prompt are constant across episodes.
 
 ## Queue
 1. exp002_zeroshot_qwen3d_rerun: done (0.722 GPU h), reported; post-review AMEND adopted.
-2. exp003_exp000_diag_eval (IDEA-017 + IDEA-006 ownstatic ride-along): running since 2026-10-24 (commit 6cec893; pre-review APPROVE round 2).
-   - Hypothesis: elevation drives exp000's config failure. Verdict order: FALSIFIED → SUPPORTED → PARTIAL → INCONCLUSIVE.
-   - Reproduction must hold first (primary 0.3136 ± 0.005, val_id 0.155 ± 0.005).
-   - Fetch the log with `log … 400`.
-   - Post-review notes: flag point-estimate-only R_f calls in the verdict sentence; the R_f interval accounts only for numerator noise.
+2. exp003_exp000_diag_eval: done (0.214 GPU h), reported; post-review AMEND adopted. Next: the planner picks between the cheap discriminators IDEA-034 (re-anchor on true t=0) / IDEA-035 (contact split) and the first improvement attempts. IDEA-036 (elev × corner split) needs a human data config.
 
-   After it: IDEA-025/026, IDEA-006, IDEA-002. Zero-shot follow-ups IDEA-024/028/032 are triggered, but they are diagnostics of the zero-shot pipeline, not of the primary objective.
+   Older queue: IDEA-025/026, IDEA-006, IDEA-002. Zero-shot follow-ups IDEA-024/028/032 are triggered, but they are diagnostics of the zero-shot pipeline, not of the primary objective.
 3. Cheap diagnostics from the exp000 review (IDEA-006/007/008), mostly analysis or tooling, not GPU. IDEA-009 done by human; IDEA-017 unblocked (diag splits exist; exp000 numbers need an eval_only spec with the exp000 adapter).
 
 ## Tooling (human, 2026-10-24)
@@ -57,7 +60,7 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 
 ## Open questions
 - Why does zero-shot exp002 do worse with the correct image than with a swapped one: a frame flip or offset, or hedging toward a default output? (IDEA-024/028/032)
-- Why does exp000 fail on val_ood_config: camera elevation, object count / omission (missing_rate), or cluster dynamics? (IDEA-006, IDEA-007; IDEA-017 now runnable via val_diag_elev/count/corner with an eval_only spec on the exp000 adapter.)
+- exp000's val_ood_config failure isn't explained by any single factor (exp003). Is it an interaction (elev × corner, IDEA-036) or additive? Is the lost dynamics gain lost skill, or harder multi-body contact (IDEA-035)? Does the split depend on the decomposition path (IDEA-034)?
 - Does exp000 use the stated impulse on val_ood_forces, or does it predict training-typical motion? (IDEA-008)
 - Are the per-split differences outside the noise? `compare` now gives per-split CIs (IDEA-009 done); exp000 per-split CIs not yet computed.
 - If the camera turns out to be the cause, which geometric input fixes it: per-patch xyz (IDEA-013), uv + depth output (IDEA-014), camera pose text (IDEA-016), or K-varying crops (IDEA-019)?
