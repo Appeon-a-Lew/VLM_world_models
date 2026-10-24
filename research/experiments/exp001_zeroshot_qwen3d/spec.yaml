@@ -1,11 +1,25 @@
 id: exp001_zeroshot_qwen3d
 hypothesis: >
-  Zero-shot Qwen3-VL-2B with its native bbox_3d grounding format already gives better-than-trivial
-  3D centres for the current state (Task A), but cannot predict push outcomes (Task B worse than static).
-change: no training; native 3D-grounding prompt
+  (A) Zero-shot Qwen3-VL-2B with its native bbox_3d prompt localises current 3D centres using the
+  image: Task A val_id all_mean(normal) is at least 0.05 m lower than Task A val_id all_mean(swap).
+  (B) Its Task B target error is worse than static: compare exp001 static gives ci95 lower bound > 0
+  (diff = exp001 - static).
+success_criteria:
+  A_supported: "taskA val_id all_mean(swap) - taskA val_id all_mean(normal) >= 0.05 m"
+  A_rejected:  "difference < 0.02 m"   # 0.02-0.05 m = inconclusive (no CI available for Task A)
+  B_supported: "compare vs static: ci95[0] > 0"
+  B_rejected:  "compare vs static: ci95[1] < 0"
+  validity:    "object-missing rate <= 5% on every split after fix 1; otherwise the run is reported as
+                a harness/format result, not a model result, for the affected split(s)"
+  note: "(B) is descriptive only: static has oracle perception, so (B) does not by itself show
+         absence of dynamics knowledge."
+change: >
+  no training; native 3D-grounding prompt.
+  harness: qwen3d token cap 128/object (instrumentation, center unchanged)
 baseline: static
 kind: eval_only
 style: qwen3d
-ablations: [none]
-budget_hours: 1
+ablations: [none, swap]
+budget_hours: 1.5
+# no eval_limit: an eval_limit < 500 breaks `compare` (exec.py:371 scores missing episodes as 1.0 m)
 seed: 0

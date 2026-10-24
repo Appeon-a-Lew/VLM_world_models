@@ -23,7 +23,7 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - `sim_ood_config` changes 3 factors at once: camera elevation 12–25° (train 30–60°), 4–5 objects (train 1–3), corner cluster. The intrinsics in the prompt are constant across episodes.
 
 ## Queue
-1. exp001_zeroshot_qwen3d (eval only): being prepared
+1. exp001_zeroshot_qwen3d (eval only): running since 2026-10-24 (commit 0776d91; pre-review APPROVE round 2). Report must quote per-split parse/missing/truncation rates from the job log; truncation_rate is an upper bound.
 2. Cheap diagnostics from the exp000 review (IDEA-006/007/008/009), mostly analysis or tooling, not GPU
 
 ## Open questions

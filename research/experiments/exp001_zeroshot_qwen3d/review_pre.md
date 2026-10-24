@@ -88,3 +88,31 @@ A second problem: the Task B half ("worse than static") is close to guaranteed b
 - Report `val_ood_config` Task A separately. Truncation and the compound shift both concentrate there.
 
 Once fixes 1-5 are committed and the spec is updated, this can be approved without another full review. A diff check of `infer.py` and `spec.yaml` is enough.
+
+---
+
+## Round 2 (diff check: `git diff 351537c 0776d91`)
+
+Verdict: **APPROVE**
+
+`git diff main...HEAD --stat` touches only `physwm/vlm/infer.py` (+13/-1) and `spec.yaml`. The worktree is clean.
+
+### Fixes 1-5
+1. **Token cap: done.** `per_obj = 128 if style == "qwen3d" else 48`. For `center` this still gives `48 + 48*n`, so exp000 stays reproducible. The spec `change` field has the instrumentation line.
+2. **Logging: done.** One line per split goes to stdout with parse_rate, missing_rate and truncation_rate. The counters reset for each split. `missing_rate` is computed correctly: `parse_answer` pre-fills every object id with `None` (`parse.py:57`), so `n_slots` counts all object slots, not just the parsed ones. Nothing writes to the pred records or changes parsing, so this is logging only.
+3. **Criteria: done.** The text matches the round-1 block word for word, including the validity gate and the descriptive-only note for (B).
+4. **`ablations: [none, swap]`: done.**
+5. **`budget_hours: 1.5`, no `eval_limit`: done.** The comment cites `exec.py:371`.
+
+### Rulings on declared deviations
+- **(i) Whitespace allowed between `]` and the fence (`\]\s*(```)?$`): accepted.** It matches the intent of fix 2. Without it, a pretty-printed `]\n```` would be miscounted as truncated.
+- **(ii) Answers ending in `}` count as truncated: accepted. It biases truncation_rate upward but changes no criterion.** The qwen3d prompt explicitly asks for a list (`prompts.py:50-52`: `JSON: [{"bbox_3d":[...],"label":"<object>"}]`). An answer ending in `}` is therefore one of three things: a bare object, line-separated objects, or (rarely) a cut exactly at an entry boundary. The first two are format non-compliance, not truncation. So truncation_rate is an **upper bound** on true truncation; read it as a "did not close the requested list" rate. This does not matter for the verdict, for two reasons:
+  - (a) the validity gate is defined on missing_rate, which measures the real effect (lost object slots) whatever the cause;
+  - (b) the parser already accepts a bare dict and falls back to the regex, so non-list answers are still scored.
+
+  **Report requirement:** label the column "truncation_rate (upper bound: non-`]`-terminated)". If it exceeds about 5% on a split where missing_rate is ≤ 5%, call it format deviation, not truncation. The cleaner signal is the count of answers whose generated length equals `max_new`. That is not required now and goes to the backlog.
+
+### Backlog items for post-review (not blocking)
+- Perception-matched own-static (optional round-1 item, not implemented). Without it, (B) stays descriptive and the report must not claim "no dynamics knowledge".
+- Log a hit-cap count (generated tokens == max_new) as the exact truncation measure.
+- Surface missing_rate in `results.md` (pinned `exec.py:330`, carried over from the exp000 review).
