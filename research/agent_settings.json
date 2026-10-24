@@ -73,7 +73,10 @@
       "Edit(//home/appeon_a_lew/wm-worktrees/*/pyproject.toml)",
       "Edit(//home/appeon_a_lew/wm-worktrees/*/scripts/**)",
       "Edit(//home/appeon_a_lew/adl4cv-worlmodels/.claude/**)",
-      "Edit(//home/appeon_a_lew/.claude/**)"
+      "Edit(//home/appeon_a_lew/.claude/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/.git/**)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/.git)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/.claude/**)"
     ],
     "ask": [
       "Artifact",
@@ -84,6 +87,23 @@
       "mcp__plugin_miro_miro__board_share",
       "mcp__claude_ai_Claude_Docs__batch",
       "mcp__claude_ai_Claude_Docs__update"
+    ],
+    "additionalDirectories": [
+      "/home/appeon_a_lew/wm-worktrees"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/appeon_a_lew/adl4cv-worlmodels/scripts/loop_bash_gate.py",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
