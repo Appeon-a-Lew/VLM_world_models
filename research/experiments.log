@@ -1,0 +1,1 @@
+2026-10-24 exp000_sft_baseline done 1.372 GPU-h | primary val_ood_target_mean 0.3136 (static 0.3790, diff -0.0654 CI [-0.0754,-0.0557]) | image gap 0.331 | parse 1.000 | verdict: reference baseline; reviewer AMEND adopted

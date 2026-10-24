@@ -3,8 +3,13 @@
 Top = next. The researcher marks items `[x]` when read and appends up to 3 follow-ups per paper. Titles in quotes come from the project description; find the exact paper first.
 
 ## Priority (project reading list + supervisor pointers)
-- [ ] OneCanvas: 3D Scene Understanding via Panoramic Reprojection (arXiv 2606.19253). Bart's suggested grounding backbone. How does it unproject patches, and how could it consume our depth + poses?
-- [ ] "Limits of Fine-Tuning" (VLM physical reasoning). Earlier work says SFT fails OOD; this is the claim exp000 tests.
+- [x] OneCanvas: 3D Scene Understanding via Panoramic Reprojection (arXiv 2606.19253). Bart's suggested grounding backbone. How does it unproject patches, and how could it consume our depth + poses? → `2026_onecanvas.md`
+  - [ ] SD-VLM: Spatial Measuring and Understanding with Depth-Encoded VLMs (arXiv 2509.17664, NeurIPS 2025). Single-view depth positional encoding is the closest analogue to IDEA-013 for our one-image setting.
+  - [ ] SR-3D: 3D Aware Region Prompted Vision Language Model (arXiv 2509.13317). Unifies single-view and multi-view inputs with 3D position embeddings; check how single-view xyz is encoded.
+  - [ ] SpaceMind: Camera-Guided Modality Fusion for Spatial Reasoning in VLMs (arXiv 2511.23075). Camera conditioning is a direct lever for the val_ood_config viewpoint shift (IDEA-016).
+- [x] "Limits of Fine-Tuning" (VLM physical reasoning). Earlier work says SFT fails OOD; this is the claim exp000 tests. → Schulze Buschoff et al., ICML 2025, arXiv 2502.15678, `2025_limits_of_finetuning.md`
+  - [ ] Can vision language models learn intuitive physics from interaction? (arXiv 2602.06033). The follow-up shows that RL from interaction also fails to generalise. Probably the "Learning Physics from Interaction" item below; verify.
+  - [ ] Lerer, Gross, Fergus 2016, "Learning Physical Intuition of Block Towers by Example" (arXiv 1603.01312). Their real-photo OOD test set and a non-VLM baseline that predicts from images.
 - [ ] "Physics Context Builders". Small fine-tuned VLMs as context providers for a large VLM.
 - [ ] "World Models from Inverse Dynamics". Inverse dynamics as a prior.
 - [ ] "Learning Physics from Interaction"
