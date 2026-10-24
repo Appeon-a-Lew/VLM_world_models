@@ -1,5 +1,7 @@
 # exp001_zeroshot_qwen3d: report
 
+> **INVALID AS SPECIFIED (human note, 2026-10-24).** An executor bug (fixed in d4de761) made this job run **main's** `infer.py`, not the exp001 snapshot. That means it ran with the 48-token-per-object cap and without the stats print. The reviewed harness change never ran. This explains the blank log lines (not an `op_log` fault, so IDEA-029's premise is wrong) and probably the val_ood_config median of 1.000 (truncation). The numbers below describe main's harness, not this spec. Superseded by `exp002_zeroshot_qwen3d_rerun`; C-003 is to be withdrawn. The text below is kept as a record.
+
 Status: done (0.351 GPU h, commit 0776d91). Every number comes from one of these `scripts/agent.sh` calls:
 - `results exp001_zeroshot_qwen3d`
 - `compare exp001_zeroshot_qwen3d static`
