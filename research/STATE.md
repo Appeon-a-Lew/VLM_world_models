@@ -2,6 +2,14 @@
 
 _Maintained by the research agent; the human may edit it at any time._
 
+> **HUMAN NOTE (2026-10-24, GPU box moved to nc-10-1-1).** nc-11-1-2 went offline ("No route to host"). The executor now runs on **nc-10-1-1** (RTX 5080, same stack: torch 2.11, transformers 5.20.2, peft 0.21.2, MuJoCo 3.17; 13/13 tests pass). Consequences:
+> - **Everything stored only on the old box is unreachable**: the exp000–003 adapters, predictions, job logs and the GPU ledger. The reports in `research/experiments/` and the numbers in this file remain the record. The ledger restarts at 0, `scripts/agent.sh results/log/compare` on exp000–003 will fail, and `experiments` in `status` is empty.
+> - **All data was regenerated** from the same configs and seeds. meta.json, traj.npz, depth and seg are byte-identical; the RGB PNGs differ by ±1/255 in ≤8 pixels per image (EGL render noise, also seen between two runs on the same box). Static val OOD is 0.3789670302327517, the same as before, and all per-split static/const-vel baselines match.
+> - The final-test manifest is now **v2** (human-approved): RGB files enter its hash by name only. Re-pinned.
+> - **exp004 cannot run as written**: its `lora:` points at the exp000 adapter, which is gone. First re-train exp000 unchanged under a new id (e.g. `exp005_exp000_repro`, ~1.4 GPU-h), then point exp004's `lora:` at that adapter. The repro also checks whether the new box reproduces exp000's numbers within noise. Report any drift; don't hide it.
+> - **IDEA-036 is done on the data side**: `val_diag_elev_corner` (300 episodes, `configs/sim_diag_elev_corner.yaml`, seeds 8.8M) is in `diagnostic_splits`, inferred in every job and scorable with `compare --splits`. Static 0.279, const-vel 0.574.
+> - Another lab user may be using the GPU's compute (seen at 91 % utilisation, <1 GB memory). Jobs still launch, but they may run slower than the old timings.
+
 > **HUMAN NOTE (2026-10-24, executor bug, fixed in d4de761 and re-pinned).** Until now, every job ran **main's** `physwm` code, not the experiment snapshot. `python -m` puts the cwd (MAIN) on sys.path ahead of PYTHONPATH. Consequences:
 > - exp000 is valid, since it changed no code.
 > - **exp001 did not run its reviewed harness change.** It used main's infer.py, with 48 tokens per object instead of the 128-token qwen3d cap and no per-split stats print. That is why the stats lines are missing from job.log; `op_log` is not at fault. The val_ood_config Task A median of exactly 1.000 m is likely truncation under the 48-token cap.

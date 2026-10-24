@@ -1,5 +1,5 @@
 {
- "version": 1,
+ "version": 2,
  "splits": [
   {
    "split": "id_test",
@@ -106,7 +106,7 @@
    },
    "seed_start": 1000000,
    "n": 1000,
-   "sha256": "3515fce5049003733b4388a526f7d564f464b9ea1aba8d93b780069dc8590198"
+   "sha256": "990e0557817094d28b5fcffd125ee923ec1263dc1e4f45b21ea19ca3bcf68d26"
   },
   {
    "split": "ood_objects",
@@ -213,7 +213,7 @@
    },
    "seed_start": 2000000,
    "n": 1000,
-   "sha256": "16229d4520f224fe8521ad043716e14544310423816b359a77be7b5adaab1ce6"
+   "sha256": "f8bc192af0f8a7571a51bf41d57f51a12be01db254c638fde47871cc5e0840ac"
   },
   {
    "split": "ood_forces",
@@ -330,7 +330,7 @@
    },
    "seed_start": 3000000,
    "n": 1000,
-   "sha256": "585256f7f5c788520b55f4c8d261d0c09d53b79db74ed03b2996c6175c966a7d"
+   "sha256": "59081e083744bfe51b50231af8028aa02a9335405c19a2cbfe31fd712245b2f5"
   },
   {
    "split": "ood_config",
@@ -441,7 +441,8 @@
    },
    "seed_start": 4000000,
    "n": 1000,
-   "sha256": "377ce66976ceeeb4f00dde35cc9ed916091d7ead91544e0adddc1493b6fb5975"
+   "sha256": "27382fd02611c78a629f81718bcb83ab549e169c020769fc7d597a9662966509"
   }
- ]
+ ],
+ "note": "v2 (2026-10-24, human-approved): regenerated on nc-10-1-1 after nc-11-1-2 went offline. rgb_*.png enter by name only (EGL render noise: <=8 px/image differ by 1/255 run-to-run). meta/traj/depth/seg byte-identical to v1 data; static val OOD 0.3789670302327517 matches nc-11-1-2."
 }

@@ -7,3 +7,6 @@
 The agent can't create data configs or generate splits on main. With the split in place, an eval_only spec on the exp000 adapter (~0.1 GPU-h) gives R_{elev+corner}. If that is close to 1, the failure is a pairwise interaction. If it is close to R_elev + R_corner (0.81), the contributions are additive.
 
 Priority: medium. The cheap discriminators IDEA-034/035 can run first without it.
+
+## Answer (human, 2026-10-24)
+Done. `configs/sim_diag_elev_corner.yaml` (corner settings plus elevation 12–25°, count 1–3) is generated as `val_diag_elev_corner` (300 episodes, seed_start 8,800,000) and listed in policy `data.diagnostic_splits`. Baselines: static 0.279, const-vel 0.574. Note: the exp000 adapter was lost with the old box (see the STATE HUMAN NOTE), so R_{elev+corner} needs the exp000 repro adapter first.
