@@ -129,3 +129,58 @@ per run.
   say so.
 - diag_corner changes three config fields (min_gap, region, region_center). It is one conceptual
   factor ("tight corner cluster") but not one parameter. Note this when interpreting R_corner.
+
+---
+
+# Round 2 (delta check)
+
+Reviewer, 2026-10-24. Worktree HEAD 6cec893 (parent c2e2605), worktree clean.
+
+## Verdict: APPROVE
+
+## Scope checks
+- `git diff c2e2605 6cec893 --stat` lists only
+  `research/experiments/exp003_exp000_diag_eval/spec.yaml` (+22/-5). The code approved in round 1
+  (infer.py, derived.py, test_derived.py) is unchanged.
+- The main copy of the spec (a84d9f9) and the worktree copy at 6cec893 are byte-identical
+  (`git diff --no-index` is empty).
+- `check_spec.py` on the worktree spec reports ok, no errors.
+- Nothing else changed: hypothesis, change, baseline, ablations, budget, seed and the
+  definitions/precondition/per_factor/outcome blocks are the same as in round 1. The new text
+  touches only the success criterion, the verdict mapping and the reporting lines.
+
+## Rulings on the experimenter's choices
+1. **0.155 as the val_id target: accepted.** exp000's metrics.json has
+   `val_id_target_mean = 0.15506`. 0.155 is 0.00006 off, about 1% of the ±0.005 tolerance, so it
+   makes no practical difference. It also fixes my round-1 "0.1551", which mis-rounded 0.15506.
+2. **Aggregate dropped from (ii): accepted.** With `--splits val_id + 3 OOD`, compare's aggregate
+   `diff_a_minus_b` is a mean that includes val_id. That is no longer the primary metric, so keeping
+   a ≤0.005 bound on it would test a different quantity. (i) already bounds the primary aggregate
+   at ±0.005. Each of the 4 splits is bounded at ±0.010 by (ii), and val_id also gets its own
+   ±0.005 metrics.json check. This is tighter than round 1 required.
+3. **Order FALSIFIED > SUPPORTED > PARTIALLY SUPPORTED > INCONCLUSIVE: accepted.** It is correct
+   that my round-1 SUPPORTED (outcome (2), f = elev) did not require R_elev to be the largest. With
+   FALSIFIED checked first, the hypothesis's own falsification clause wins any overlap, and reaching
+   SUPPORTED implies R_elev >= max(R_count, R_corner). I checked the mapping exhaustively, and every
+   outcome gets exactly one label:
+   - Outcome (3) with elev implicated and largest and R_corner <= 0.25 (so count is also
+     implicated) maps to INCONCLUSIVE. That is conservative and correct: "compound" contradicts
+     "driven by camera elevation".
+   - Outcome (3) with elev and corner both implicated and elev largest maps to PARTIALLY SUPPORTED.
+     That is acceptable.
+   - Exact ties R_elev = max(other) are not falsified. This has measure zero and does not matter.
+4. **report_must_quote: accepted.** Task B and `--task A` now both use val_id + val_ood_objects +
+   val_ood_forces + val_ood_config, which matches (ii) and (iv). exp000 has Task A on all 4 splits,
+   so the `--task A` compare is not refused.
+
+Also adopted: `agent.sh log ... 400` (round-1 note) and the `r_f_intervals` block (round-1
+recommendation, reporting only).
+
+## Notes for the post-review (not required now)
+- FALSIFIED and "largest R_f" are point comparisons. If the verdict rests on a call that
+  `r_f_intervals` flags "point-estimate only", the report must print that flag next to the verdict
+  in the same sentence, not in a separate table.
+- The R_f interval divides by the S_cfg point estimate, so it is conservative in the numerator
+  only. It should be described that way, not as a full CI on R_f.
+- If reproduction fails, the spec gives no hypothesis verdict. The report must not then give one
+  for "exp000 under the current stack" either.
