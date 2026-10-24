@@ -1,0 +1,178 @@
+id: exp003_exp000_diag_eval
+# IDEA-017 (+ IDEA-006 read-out as declared instrumentation). Planner round 3, 2026-10-24.
+# Re-evaluates the existing exp000 LoRA adapter (no training) so that exp000 gets predictions on the
+# single-factor diagnostic splits val_diag_elev / val_diag_count / val_diag_corner (configs/sim_diag_*.yaml,
+# each = sim_train.yaml with ONE ood_config factor changed, so val_id is the matched reference).
+# exp002 (zero-shot qwen3d) ranked count 0.887 > elev 0.771 > corner 0.519 ~ val_id 0.564 on Task A:
+# context only, different model and answer style, not a criterion.
+hypothesis: >
+  exp000's val_ood_config failure is driven by camera elevation. On Task B target error relative to
+  static, the elevation-only split reproduces at least half of val_ood_config's shift away from val_id
+  (R_elev >= 0.5, "implicated" per decision_criteria). R_elev is the largest of the three R_f, and the
+  corner cluster is cleared (R_corner <= 0.25). Falsified if R_elev < 0.5, or if R_count or R_corner
+  exceeds R_elev.
+change: >
+  none: eval_only re-run of the exp000 adapter (style center, seed 0) so that it is scored on
+  val_diag_elev/count/corner. Instrumentation only (IDEA-006 read-out, no effect on any generated
+  answer): physwm/vlm/infer.py writes a derived pred/ownstatic.jsonl (each episode's Task A answer
+  re-labelled as its Task B answer) and prints per-split, per-task stats lines to job.log.
+  center generation and pred/normal.jsonl records are byte-identical to main.
+baseline: static
+kind: eval_only
+lora: /var/tmp/toyi/wm/experiments/exp000_sft_baseline/model/adapter
+style: center
+# `none` is mandatory: evaluate_experiment reads {exp}:none for image_dependence_gap and raises on NaN
+# (exec.py:329-334); omitting `ablations` would also default to [none] (exec.py:271), but list it explicitly.
+# blank/swap are not needed: they answer no question here, and exp000 already has them (0.472 / 0.400).
+ablations: [none]
+# Expected ~0.3 h; worst case ~0.55 h (see budget_note). Margin ~1.8x on the worst case.
+budget_hours: 1.0
+seed: 0
+# Do NOT set eval_limit (an eval_limit < 500 breaks `compare` against exp000, exec.py:384-390) and do NOT set
+# batch_size (exec default 32 = exp000's; batch composition must match for the reproduction check).
+
+budget_note: >
+  Same per-step rate as exp002's pre-review estimate (34-38 ms per decode step at batch 32,
+  exp002/review_pre.md), with center caps of 48 + 48n (192 steps for n <= 3, 288 for n <= 5).
+  Worst case, every batch running to the cap at 36 ms: val_id, val_ood_objects and val_ood_forces at
+  32 batches x 192 steps each = 663 s; val_ood_config 32 x 288 = 332 s; diag_elev and diag_corner
+  19 x 192 = 131 s each; diag_count 19 x 288 = 197 s; the none ablation 32 x 192 = 221 s. Total
+  ~1675 s ~ 0.47 h, plus two model loads (LoRA merge) and evaluation ~0.08 h, so ~0.55 h. center
+  answers stop at EOS well before the cap (exp000 ran 7000 inference samples inside its 1.372 h,
+  training included); this job runs 6800. Expected 0.25-0.35 h. Ledger: 24 h usage ~2.45 h of 12. If it
+  times out (none runs last, so evaluate_experiment would not run), resubmit at 1.5 h with nothing else
+  changed.
+
+implementation:
+  - >
+    Fresh worktree off current main (>= f863d5a; executor runs from the snapshot, >= d4de761). Only
+    physwm/vlm/infer.py, a new physwm/vlm/derived.py, a new tests/test_derived.py and this spec.yaml
+    change. No change to prompts.py, parse.py, exec.py, metrics.py or any pinned file. No new
+    dependencies (pyproject.toml untouched).
+  - >
+    Stats lines, adapted from exp002's reviewed hunk (git show 9e70064 -- physwm/vlm/infer.py, the
+    counters and print only): in main(), per split, keep counters PER TASK (dict keyed by task,
+    reset at the start of each split). Count answers, parsed, truncated (not re.search(r"\]\s*(```)?$",
+    ans.strip())), object slots (len(objects)) and missing slots (sum(v is None for v in
+    objects.values())). After the tqdm loop, print one line per task with a leading newline and
+    flush=True, in the form "[<split>] mode=<image_mode> task=<A|B> answers=N parse_rate=x.xxx
+    missing_rate=x.xxx truncation_rate=x.xxx". Do NOT copy exp002's per_obj/qwen3d line. The max_new
+    line (48 + 48 * max n) stays exactly as on main.
+  - >
+    New physwm/vlm/derived.py (stdlib only, no torch import), with a pure function
+    ownstatic_records(records: list[dict]) -> list[dict]. For each record with task == "A", emit
+    {"episode_id": same, "task": "B", "objects": same dict (None slots stay None, so they score
+    MISSING_PENALTY), "parsed": same, "derived_from": "taskA", "image_mode": same, "style": same,
+    "lora": same}. Order follows the input; at most one output per episode_id.
+  - >
+    In infer.py main(), keep each Task A record dict in a list as it is written (the json.dumps call
+    and key order of normal.jsonl records are unchanged). After the split loop, and ONLY if
+    args.image_mode == "normal" and both A and B are in args.tasks, write ownstatic_records(...)
+    to out_path.with_name("ownstatic.jsonl"), one json.dumps per line. The file stem must be all
+    lowercase letters ("ownstatic", no underscore): compare only accepts exp_id:mode with mode
+    matching [a-z]* (exec.py:374). The ablation pass (--image-mode none) writes no derived file.
+  - >
+    tests/test_derived.py: two synthetic Task A records (one with a None slot) plus one Task B record.
+    Assert that ownstatic_records returns exactly two Task B records whose objects equal the Task A
+    objects, None preserved, and that the Task B input is ignored. This is the preflight gate (pytest
+    -x tests).
+  - >
+    Effect on scoring: pinned evaluate_experiment scores every pred/*.jsonl (exec.py:304-309), so
+    results.md gains Task B rows "exp003_exp000_diag_eval:ownstatic" on all 7 splits. The primary
+    metric, parse_rate_min and image_dependence_gap read only :normal and :none (exec.py:317-331),
+    so they are unaffected.
+  - >
+    Commit spec + code, run python3 scripts/check_spec.py on the worktree spec, clean worktree,
+    submit. Pre-review checks: (a) the center generation path and the normal.jsonl record write are
+    unchanged vs main (git diff main...HEAD -- physwm/vlm/infer.py shows only counters, prints, the
+    Task A record list and the derived-file write); (b) the derived file is written only in normal
+    mode and only as ownstatic.jsonl.
+
+# All quantities below come from pinned-visible outputs: results.md / metrics.json (agent.sh results),
+# compare (agent.sh compare), and the job.log stats lines (agent.sh log). Note: `compare --task A ... static`
+# is DENIED because the pinned static baseline holds Task B records only (exec.py:522, 379-385), so Task A
+# per-split numbers are point estimates from results.md (all_mean of exp003_exp000_diag_eval:normal).
+success_criterion:
+  primary_metric_reproduction: >
+    The primary metric is not expected to change (no model or prompt change). The improvement_threshold
+    (0.005 m) is used as the reproduction tolerance. Greedy decoding with the same adapter, code path,
+    split order and batch size 32 should give an exact match (compare diff 0.0000). REPRODUCED if all
+    of the following hold:
+    (i) |metrics.json value - 0.3136| <= 0.005;
+    (ii) `compare exp003_exp000_diag_eval exp000_sft_baseline` (default splits) has |diff_a_minus_b| <= 0.005
+    and every |per_split_diff| <= 0.010;
+    (iii) `compare exp003_exp000_diag_eval:none exp000_sft_baseline:none --splits val_id` has
+    |diff| <= 0.010, and image_dependence_gap is within 0.331 +/- 0.010;
+    (iv) results.md Task A all_mean on val_id and val_ood_config is within 0.005 of 0.016 and 0.136.
+    If (i)-(iv) hold, exp003's numbers stand in for exp000 on every split. If any fails, the stack
+    drifted. The diag results are then reported as "exp000 adapter under the current stack", are not
+    mixed with exp000's own numbers, and the human is told (NOT a model result about exp000).
+  if_it_fails: >
+    If R_elev < 0.5: the leading camera-prior story (exp000 review_post (a) alternative 2, the
+    camera_robust note) is wrong for the fine-tuned model, and the geometry levers (IDEA-016/014/020/
+    013/019) drop down the backlog. If count is implicated instead: the 4-5-object regime is the cause.
+    Task A missing_rate > 0.05 says omission/format, otherwise binding/localisation, and IDEA-004
+    (set-of-marks) moves up. If corner is implicated with dynamics broken (see mechanism): cluster
+    dynamics, so IDEA-002 / IDEA-031 move up. If no single factor reproduces the shift (outcome 4):
+    the failure is an interaction. The next step is a two-factor diag split (needs a human config on
+    main), or IDEA-030 probes on val_ood_config, and no single-factor lever is justified.
+
+decision_criteria:
+  definitions: >
+    Run C1 = `compare exp003_exp000_diag_eval static --splits val_id val_ood_config val_diag_elev
+    val_diag_count val_diag_corner` (Task B target). D_s = C1.per_split_diff[s] (adapter - static;
+    exp000 had D_val_id ~ -0.110, D_val_ood_config ~ +0.028). Shift S_s = D_s - D_val_id. Config
+    shift S_cfg = D_val_ood_config - D_val_id (expected ~ +0.138). Share R_f = S_f / S_cfg for
+    f in {elev, count, corner}. Ignore C1's aggregate "diff_a_minus_b" (a mean over mixed splits).
+  precondition: >
+    S_cfg >= 0.05 m and C1.per_split_ci95[val_ood_config][0] > C1.per_split_ci95[val_id][1]
+    (the config failure exists in this run). If not, no attribution is made.
+  per_factor: >
+    IMPLICATED if R_f >= 0.5 AND C1.per_split_ci95[val_diag_f][0] > C1.per_split_ci95[val_id][1]
+    (separable from ID-level noise). CLEARED if R_f <= 0.25. PARTIAL otherwise.
+  outcome: >
+    (1) exactly one factor implicated, the other two cleared: "f drives the config failure".
+    (2) one implicated, at least one partial: "f is the main driver; secondary contribution from
+    the partial ones".
+    (3) two or more implicated: "compound". No single driver is claimed; the follow-up targets the
+    factor with the largest R_f.
+    (4) none implicated and R_elev + R_count + R_corner < 0.75: "interaction". The single factors do
+    not reproduce the failure.
+    (5) none implicated and the sum >= 0.75: "diffuse". Small additive contributions, no single lever.
+  mechanism_readouts: >
+    Secondary. They are reported for every diag split and used for routing, not for the verdict.
+    (a) Perception share P_f = (A_f - A_val_id) / (A_val_ood_config - A_val_id), with A = results.md
+    Task A all_mean of exp003_exp000_diag_eval:normal; P_f >= 0.5 = perception degraded.
+    (b) Omission: job.log `[val_diag_f] mode=normal task=A ... missing_rate`; > 0.05 = omission
+    artefact (each missing object scores 1.0 m).
+    (c) Dynamics: C2 = `compare exp003_exp000_diag_eval exp003_exp000_diag_eval:ownstatic --splits
+    val_id val_ood_config val_diag_elev val_diag_count val_diag_corner`, with G_s = C2.per_split_diff[s]
+    (Task B minus own-static; negative = the predicted motion adds value beyond the model's own
+    perception). Dynamics PRESERVED on s if C2.per_split_ci95[s][1] < 0 and G_s <= 0.5 * G_val_id.
+    BROKEN if C2.per_split_ci95[s][1] >= 0. REDUCED otherwise.
+    Precondition for (c): C2.per_split_ci95[val_id][1] < 0; if not, own-static is uninformative and
+    (c) is reported as such.
+    (d) Descriptive: C3 = `compare exp003_exp000_diag_eval:ownstatic static --splits` (same 5 splits) =
+    the cost of own vs oracle t=0 positions.
+  routing: >
+    elev implicated with P_elev >= 0.5 and missing <= 0.05: camera/perception, so IDEA-016 first,
+    then IDEA-014, with IDEA-030 (probes) to locate it. count implicated with missing > 0.05:
+    omission/format; with missing <= 0.05 and P_count >= 0.5: binding/localisation; either way
+    IDEA-004. corner implicated with dynamics BROKEN and P_corner < 0.5: cluster dynamics, so IDEA-002
+    and IDEA-031. Any implicated factor with dynamics BROKEN raises IDEA-002 regardless.
+
+report_must_quote:
+  - "agent.sh results: metrics.json; results.md rows for :normal, :ownstatic and :none on all splits (Task A and B)"
+  - "agent.sh log: every stats line, i.e. 7 splits x 2 tasks for mode=normal plus val_id x 2 tasks for mode=none.
+     If any is missing, the snapshot did not run and the run is invalid."
+  - "compare exp003_exp000_diag_eval exp000_sft_baseline (default) and --task A --splits val_id val_ood_objects
+     val_ood_forces val_ood_config; compare exp003_exp000_diag_eval:none exp000_sft_baseline:none --splits val_id"
+  - "C1, C2 and C3 as defined in decision_criteria, plus the R_f / P_f / G_s table computed from them"
+  - "compare exp003_exp000_diag_eval static (default) for the primary metric line"
+  - "exp002 diag numbers may appear only in a context table labelled 'different model'; never as a criterion"
+
+out_of_scope:
+  - "IDEA-030 (linear probes): needs forward hooks, a train-split forward pass and ridge fitting, a new
+     code path whose outputs pinned scoring cannot see. Left out; it is a separate experiment if elev is implicated."
+  - "IDEA-031 (latent floor), IDEA-025/026 (counterfactual actions): different questions; separate specs."
+  - "blank/swap ablations: not needed (exp000 already has them; none suffices for image_dependence_gap)."

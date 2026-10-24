@@ -3,7 +3,27 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
-## Ranking (planner, 2026-10-24, round 2; spec: exp002_zeroshot_qwen3d_rerun)
+## Ranking (planner, 2026-10-24, round 3; spec: exp003_exp000_diag_eval)
+Inputs: exp002_zeroshot_qwen3d_rerun draft report (post-review pending), exec.py (current main), configs/sim_diag_*.yaml.
+
+What changed since round 2:
+- exp002 ran on the snapshot. Its job.log stats lines are visible for all 9 passes, so **job.log prints are a usable read-out channel**. IDEA-025's slope and IDEA-026's sign agreement no longer need a pinned-scored workaround.
+- exp002 (zero-shot, context only): (A) is rejected, and swap beats normal on Task A val_id (−0.063, CI [−0.089, −0.036]) with missing ≤ 0.009 in both modes. That meets IDEA-024's condition and IDEA-028's condition. Both concern the zero-shot pipeline only and do not bear on the primary metric.
+- Pinned facts that shape the next spec:
+  - `compare --task A ... static` is DENIED, because the static baseline holds only Task B records (exec.py:522, 379-385). Per-split Task A numbers are therefore point estimates from results.md.
+  - A derived pred file can be used with `compare` only if its stem matches `[a-z]*` (exec.py:374). Use `ownstatic.jsonl`, not `normal_ownstatic.jsonl`.
+  - `none` is mandatory for eval_only jobs (image_dependence_gap raises on NaN, exec.py:329-334).
+
+Top 5 (for / against; effect on primary; cost; risk; information value):
+1. **IDEA-017 + IDEA-006 read-out → planned: exp003_exp000_diag_eval.** For: the top open question (config 0.269 vs static 0.241). Each diag split is sim_train with one factor changed, so val_id is a matched reference. Greedy decoding gives a reproduction check of 0.3136. Own-static as a derived file (Task A re-labelled as B) splits each factor's effect into perception and dynamics, with paired CIs through `compare exp003 exp003:ownstatic`. Against: single factors can miss an interaction; the spec's outcome (4) covers that case. The zero-shot ranking (count > elev) hints the answer may not be elevation, but that is a different model. Effect: none directly; it picks the config lever. Cost: 1.0 GPU-h budgeted, ~0.3 expected. Risk: none protected. The IDEA-006 part is instrumentation only (derived file + stats lines), with center generation and normal.jsonl unchanged. Info: highest per GPU-h.
+2. **IDEA-025 + IDEA-026 counterfactual actions on exp000 (forces).** It is now cheaper, since job.log is visible (exp002), so the slope statistic can be printed. Forces is 78% of exp000's gain. Cost ~0.15 GPU-h. Two prompt interventions: split them into two specs if the reviewer insists. Info: high.
+3. **Conditional on exp003's routing:** elev → IDEA-016 (then 014; IDEA-030 probes to locate the failure); count → IDEA-004; corner with dynamics broken → IDEA-002 / IDEA-031. Each is about 1.4 GPU-h, except IDEA-030 and IDEA-031, which are eval-only.
+4. **IDEA-002 displacement output.** It rises to #2 if exp003 shows dynamics BROKEN on the implicated factor, or if 025/026 show the action is ignored. Otherwise it waits.
+5. **IDEA-024 + IDEA-028 + IDEA-032 zero-shot read-out on exp002 preds, in one job.** Conditions met. It explains a zero-shot anomaly and does not bear on the primary metric. Cost < 0.05 GPU-h plus about 0.5-1 day of code. Low priority. IDEA-032's GT-dispersion caveat also explains why exp002's count > elev ranking is not used as evidence in exp003. In exp003 the dispersion effect is controlled: R_f uses the diff vs static on the same episodes, and exp000 is an informative predictor.
+
+Unchanged below: IDEA-008 (prior baseline only), IDEA-023, IDEA-022, IDEA-020, IDEA-019 + IDEA-027, IDEA-003, IDEA-015, IDEA-013, IDEA-018 (evidence against), IDEA-021, IDEA-005.
+
+## Ranking (planner, 2026-10-24, round 2; spec: exp002_zeroshot_qwen3d_rerun; superseded by round 3)
 Inputs: exp001 report + review_post, the HUMAN NOTE in STATE.md (executor bug, fixed in d4de761), the coordinator directive (next spec = exp001 rerun), and literature notes 2025_qwen3_vl, 2026_quantiphy, 2023_omni3d_cube_rcnn, 2026_camera_robust_3d_tooluse.
 
 What changed since round 1:
@@ -95,7 +115,8 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: eval-only, no GPU. Score each model's own Task A prediction as its Task B answer, per split, and add `missing_rate` to `results.md`. Static copies GT t=0 positions (oracle perception), so a model's gain over own-static isolates dynamics skill.
 - discriminates: on val_ood_config, perception-only failure (SFT-B well below own-static) vs a dynamics failure as well (SFT-B ≈ own-static), and an object-omission artefact with 4–5 objects (missing_rate > 0).
 - note (planner, 2026-10-24): a `missing_rate` column in results.md would need an edit to pinned exec.py. `summarize` already computes it (metrics.py:85), so print it per split/task to job.log from worktree infer.py instead. Own-static works without any pinned change: a derived `pred/normal_ownstatic.jsonl` (Task A objects copied into the Task B records) is scored automatically.
-- status: proposed
+- note (planner, round 3): name the file `pred/ownstatic.jsonl`. `compare` accepts only `exp_id:mode` with mode matching `[a-z]*` (exec.py:374), so an underscore would make it unreachable for paired CIs.
+- status: planned: exp003_exp000_diag_eval, as declared instrumentation riding along with IDEA-017. It covers the derived ownstatic.jsonl and per-split, per-task stats lines (missing_rate) in job.log. center generation and the normal.jsonl records are unchanged.
 
 ## IDEA-007 Single-factor breakdown of val_ood_config
 - source: review of exp000_sft_baseline
@@ -160,6 +181,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - note (planner, 2026-10-24): seeds are not actually the blocker. `op_gen` accepts `dev_*` splits with seeds outside [1M, 9M), e.g. ≥ 9,000,000 (exec.py:417-428). The real blockers: (1) `op_gen` only takes configs from main's `configs/`, so three new single-factor sim configs must land on main; (2) pinned `evaluate_experiment` loads only `validation_splits` episodes (exec.py:295-296), so predictions on `dev_*` splits would be silently skipped. Scoring them needs a pinned change, or unpinned scoring in worktree code, which a human should approve.
 - status: unblocked (human, 2026-10-24). Splits `val_diag_elev` (elevation 12–25° only), `val_diag_count` (4–5 objects only) and `val_diag_corner` (corner cluster with min_gap 0.01 only), 300 episodes each, configs `configs/sim_diag_*.yaml`, policy `data.diagnostic_splits`. Every job now runs inference on them and lists them in results.md (not in the primary metric); `compare --splits` gives CIs. To get exp000 numbers, plan an eval_only spec with `lora: /var/tmp/toyi/wm/experiments/exp000_sft_baseline/model/adapter`.
 - note (planner, 2026-10-24, round 2): ranked #2. It is the next spec after exp002 (suggested id exp003_exp000_diag_eval). The change is none: same adapter, `style: center`, `ablations: [none]`. Optional ride-along: the IDEA-006 own-static derived file, declared in the spec.
+- status: planned: exp003_exp000_diag_eval (round 3). Decision rule fixed in the spec: share R_f = (D_f − D_val_id) / (D_config − D_val_id) of the Task B diff vs static. A factor is implicated if R_f ≥ 0.5 and its CI is separable from val_id; it is cleared if R_f ≤ 0.25.
 
 ## IDEA-018 LoRA on the vision encoder too
 - source: research/literature/2025_limits_of_finetuning.md
@@ -214,7 +236,10 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - note (review of exp001_zeroshot_qwen3d): priority up. On val_id, swap scores *better* than normal (Task A −0.051 m, CI [−0.074, −0.028]). An axis sign flip or offset is the one simple mechanism under which image-driven predictions lose to wrong-image predictions. Run (i)-(ii) together with IDEA-028 in the same read-out.
 - note (planner, 2026-10-24, round 2): the "swap beats normal" motivation came from exp001, which is invalid as specified (48-token cap). Run this audit on exp002's preds, and only if exp002 reproduces swap ≥ normal with missing_rate ≤ 5% in both modes.
 - refinement (researcher, 2026-10-24, research/literature/2023_omni3d_cube_rcnn.md): Cube R-CNN-style virtual depth (f_v = H_v) amounts to a virtual camera whose focal is H in original pixels. Under it, X_v = X and Y_v = Y, and only z is rescaled: z_v = z·H/f. For our K (fy ≈ 480.4, H = 448) the virtual-camera hypothesis therefore predicts z_gt ≈ 1.072·z_pred with **x and y scales ≈ 1**, a fitted uniform xyz scale would point to something else. A test with no fitting: project the predictions with K_v (fx = fy = 448, cx = cy = 224) and with our K. Under the hypothesis, K_v gives the lower pixel error, and with our K the pixels are over-scaled radially by ~1.072 about (224, 224). Decision rule: report raw outputs as the exp001 primary. Report the z×1.072 variant only as a labelled post-hoc diagnostic, and only if both tests agree. The bias is ≤ ~0.09 m at our depths, so it cannot explain a ~0.7 m error. It does not apply to SFT models (constant K is absorbed).
-- status: proposed
+- note (source: review of exp002_zeroshot_qwen3d_rerun): **the trigger condition is met.** exp002 reproduces swap < normal on val_id with missing ≤ 0.009 in both modes: Task A −0.063 [−0.089, −0.036], Task B −0.059 [−0.088, −0.028]. Run it on `exp002_zeroshot_qwen3d_rerun/pred/{normal,swap}.jsonl`.
+  - Pure variance shrinkage predicts swap ≈ normal, so this audit's sign/offset fit (ii) is the most direct test of the leading mechanism: an anti-informative transform under the correct image. A uniform scale error does not make wrong-image predictions win.
+  - Also report the fitted correction on val_ood_config and val_diag_elev. If one global sign/offset fix closes most of the config error, the config failure (C-004) is a read-out convention problem, not a perception problem.
+- status: proposed (trigger met)
 
 ## IDEA-025 Counterfactual impulse scaling (action-dependence test)
 - source: research/literature/2026_quantiphy.md
@@ -255,7 +280,13 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
   - For config, (e) separates omission (few objects per answer) from truncation (hit-cap) from label mismatch (a).
 - cost: < 0.05 GPU h (model load not needed); about 0.5 day of code
 - note (planner, 2026-10-24, round 2): exp001's preds come from main's 48-token harness and are invalid as specified. Retarget this read-out at exp002_zeroshot_qwen3d_rerun's preds, and run it only if exp002 shows missing_rate > 5% on some split or swap ≥ normal on Task A val_id. (a) and (e) are partly answered by exp002's own stats lines.
-- status: proposed (conditional on exp002)
+- note (source: review of exp002_zeroshot_qwen3d_rerun): **the trigger condition is met** (swap < normal on Task A val_id, missing ≤ 0.009 in both modes).
+  - (a) and (e) are mostly answered: missing ≤ 0.017 and truncation ≤ 0.023 on every split.
+  - The open items are (b), (c) and (d). Their discriminating predictions:
+    - (c) r < 0 on some axis under normal → frame transform (joint with IDEA-024).
+    - std(swap) < std(normal) and (d) const-prior < normal → differential hedging.
+  - Write (d) for *all* val and diag splits, not only val_id, so that pinned code also scores it on val_diag_* (see IDEA-032).
+- status: proposed (trigger met; retarget at exp002 preds)
 
 ## IDEA-029 Fix `op_log` dropping stdout lines that share a physical line with a tqdm frame (tooling)
 - source: review of exp001_zeroshot_qwen3d
@@ -299,4 +330,18 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: about 0.5 day of code, no training. Natural ride-along in the IDEA-017 job, which produces the exp000 preds.
 - follow-up if the floor is large: a privileged arm that states speed (m/s) instead of impulse in the action text, analogous to Physion++'s DPI-Net with latents (mass 60.1 → 75.9%). Its gain over exp000 upper-bounds what mass inference could buy. 1 SFT run; not proposed separately yet.
 - risk: approximate physics (no rotation, toppling or edge effects), hence the isolated subset only. Any non-zero error of this oracle on that subset is partly the approximation itself, so report it as an approximate floor.
+- status: proposed
+
+## IDEA-032 Interpretability controls for the zero-shot factor ranking and the swap anomaly (diagnostic, no GPU)
+- source: review of exp002_zeroshot_qwen3d_rerun
+- background: exp002 ranks the diag splits by Task A error: count 0.887 > elev 0.771 > val_id 0.564 ≈ corner 0.519. The splits use different episodes, so there is no paired CI. The same run shows that the pipeline loses to a wrong image on val_id (swap < normal). For a near-uninformative predictor, per-split error tracks how far GT lies from the predictor's default output, not perceptual difficulty. The ranking therefore can't be read as "count hurts localisation" yet.
+- change: derived read-outs on the existing exp002 preds. No generation and no pinned change.
+  - (a) A constant-centre prior: the mean `train` Task A camera-frame centre per object slot. Write it as one derived pred file covering val_id, val_ood_* and val_diag_* (shared with IDEA-028 (d)), so pinned `summarize` and `compare` score it per split. Name it `pred/constprior.jsonl`: `compare` accepts only `exp_id:[a-z]*` (exec.py:374), so IDEA-028's `const_prior` would be rejected. Then run `compare exp002_zeroshot_qwen3d_rerun exp002_zeroshot_qwen3d_rerun:constprior --task A --splits <s>` on each diag split; this is paired within the split, with a CI.
+  - (b) Hungarian-matched vs label-matched Task A error per mode on val_id, as a test of label-to-box misassignment.
+  - (c) Within-val_id stratification of Task A error by object count. This is a paired, same-distribution count effect. The weighting gap already hints at it: object-pooled normal is 0.564, episode-weighted 0.493.
+- discriminates:
+  - The exp002 − prior gap stays roughly constant across diag splits → the ranking is a GT-dispersion artefact.
+  - The gap grows on count/elev → a genuine factor effect for this pipeline.
+  - Hungarian ≪ label-matched under normal → misassignment, which favours IDEA-004 over frame fixes.
+- cost: about 0.5 day of code, < 0.05 GPU-h. It can share a job with IDEA-024/028.
 - status: proposed
