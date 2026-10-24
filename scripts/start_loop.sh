@@ -7,7 +7,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 mkdir -p "$REPO/../wm-worktrees"
 tmux has-session -t wm-agent 2>/dev/null && { echo "already running: tmux attach -t wm-agent"; exit 0; }
 tmux new-session -d -s wm-agent -c "$REPO" \
-  "claude --remote-control wm-research --permission-mode acceptEdits \
+  "claude --remote-control wm-research --permission-mode dontAsk \
      --settings research/agent_settings.json \
      '/loop Follow research/LOOP.md for one iteration.'"
 echo "started: tmux attach -t wm-agent"

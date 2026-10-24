@@ -42,7 +42,16 @@
       "Bash(basename:*)",
       "Bash(dirname:*)",
       "Bash(realpath:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Read(//home/appeon_a_lew/adl4cv-worlmodels/**)",
+      "Read(//home/appeon_a_lew/wm-worktrees/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/research/**)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/**)",
+      "Agent",
+      "Skill",
+      "ScheduleWakeup",
+      "PushNotification",
+      "TodoWrite"
     ],
     "deny": [
       "Bash(ssh:*)",
@@ -76,9 +85,7 @@
       "Edit(//home/appeon_a_lew/.claude/**)",
       "Edit(//home/appeon_a_lew/adl4cv-worlmodels/.git/**)",
       "Edit(//home/appeon_a_lew/wm-worktrees/*/.git)",
-      "Edit(//home/appeon_a_lew/wm-worktrees/*/.claude/**)"
-    ],
-    "ask": [
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/.claude/**)",
       "Artifact",
       "mcp__plugin_miro_miro__canvas_create_from_svg",
       "mcp__plugin_miro_miro__canvas_update_from_svg",
@@ -88,6 +95,7 @@
       "mcp__claude_ai_Claude_Docs__batch",
       "mcp__claude_ai_Claude_Docs__update"
     ],
+    "defaultMode": "dontAsk",
     "additionalDirectories": [
       "/home/appeon_a_lew/wm-worktrees"
     ]
