@@ -107,6 +107,11 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - source: review of exp000_sft_baseline
 - change: eval-only. Split val_ood_forces by speed mode (weak [0.08, 0.25] vs strong [2.0, 2.8] m/s) and by off-table vs on-table outcome. Regress predicted |Δ| on the impulse. Add a trivial baseline: own Task A position + mean training displacement along the stated push direction.
 - discriminates: regression to the training displacement prior (prior baseline ≈ SFT; no slope with impulse) vs partial extrapolation (positive slope within modes) vs gain driven by off-table events.
+- extension (researcher, 2026-10-24, research/literature/2023_physion_pp.md):
+  - The cross-episode regression is confounded by mass. The action text gives the *impulse* (push.py:157-159), and speed = impulse / (ρ·V), with density ρ ∈ [400, 800] latent and volume V visible.
+  - Add log V (from metadata `mass/density`) as a covariate. For sliders, physics predicts ∂log d̂/∂log I = +2 and ∂log d̂/∂log V = −2.
+  - A V-coefficient ≈ 0 means the model maps the impulse number to a displacement without inferring mass from size.
+  - The latent ρ and μ stay in the residual, so expect a low R² even for a physics-consistent model. IDEA-025's within-episode slope is not affected, because mass cancels there.
 - status: proposed
 
 ## IDEA-009 Per-split paired-bootstrap CIs in `agent.sh compare`
@@ -161,6 +166,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: extend `lora.target_modules` to include the ViT attention/MLP layers
 - expected: possibly lower ID Task A error. The val_ood_config effect is uncertain, and it may overfit the viewpoint distribution further (the paper adapted the ViT and still failed under visual shift).
 - cost: config change plus 1 SFT run (about 1.5 GPU h)
+- evidence (researcher, 2026-10-24, research/literature/2026_vlm_physics_interaction.md, App. A.9.3, Fig. 22): in the same group's follow-up (Qwen3-VL-8B, LoRA r = 16), a model trained **without** vision-encoder fine-tuning "performed similarly" and failed to transfer exactly like the default. LoRA ranks 1 and 8 also made no difference. This is direct evidence that ViT adaptation is not the lever for transfer. It lowers the expected value of 018 for the OOD splits, so keep it low-priority.
 - status: proposed
 
 ## IDEA-019 Random crop/zoom augmentation with intrinsics rewritten in the prompt
@@ -215,6 +221,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: eval-only with the exp000 adapter. Keep the image fixed and multiply the impulse number in the action text by α ∈ {0.5, 2}. Read out the target's predicted displacement d̂(α) = ‖pred_B − own pred_A‖ and the median log-log slope log(d̂(2)/d̂(0.5))/log 4, split by sliders vs balls, on val_id and val_ood_forces. Flag episodes whose scaled speed leaves train [0.3, 1.6] m/s. Single change: the impulse value in the prompt.
 - discriminates: slope ≈ 2 (d ∝ v² for on-table sliding) means physics-consistent use of the impulse. Slope ≈ 0 means anchoring to the training displacement prior (QuantiPhy: counterfactual priors drop MRA by about 70-80%). 0 < slope < 2 means partial use. It is a within-episode intervention, so it avoids the mass, edge-distance and mode confounds of IDEA-008's cross-episode regression. Run it in the same job as IDEA-008.
 - cost: worktree prompt option plus about 0.15 GPU h. Counterfactual predictions have no GT, so log the slope to job.log and never write them to `pred/normal.jsonl`. A scored version needs re-simulated counterfactual GT (`op_gen` change, human).
+- note (researcher, 2026-10-24, research/literature/2023_physion_pp.md): the slope-2 expectation holds regardless of the latent density ρ ∈ [400, 800] and friction μ ∈ [0.35, 0.6] (both unobservable from one frame), because they cancel in d̂(2)/d̂(0.5). So 025 stays a clean test even though absolute displacement is ambiguous by up to about 0.45×-3.05× from the latents. Do not add mass covariates here; those belong to the IDEA-008 extension. Related: research/literature/2026_vlm_physics_interaction.md has no direct action-conditioning evidence (its single-step prompts state no action).
 - status: proposed
 
 ## IDEA-026 Counterfactual direction flip (action-dependence test)
@@ -255,3 +262,41 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: in pinned `physwm/agent/exec.py:356`, apply the tqdm filter to the segment after the last `\r`, not to the whole line. Alternatively, surface missing_rate in results.md (exp000 review item). Interim worktree workaround: print `"\n"` before every stats line.
 - discriminates: n/a. Without this fix, every pre-review logging requirement routed through job.log is unverifiable, and exp001's validity gate failed to be checkable for exactly this reason.
 - status: rejected: premise wrong (human, 2026-10-24). exp001's stats lines were never printed because the job ran main's infer.py (executor bug, fixed in d4de761), so op_log was not at fault. exp002 prints its stats lines with a leading newline as a cheap guard and so tests job.log visibility directly.
+
+## IDEA-030 Linear-probe diagnostic of exp000: is the config failure in the visual representation or in the LoRA readout? (diagnostic)
+- source: research/literature/2026_vlm_physics_interaction.md
+- background:
+  - Schulze Buschoff et al. 2026 (§4.4, App. A.6) find the task variables "highly decodable" by linear probes from visual-token activations at all layers, in base and fine-tuned Qwen3-VL-8B, while behaviour fails to transfer ("competence" without "performance").
+  - The NeurReps 2026 workshop paper "Selective Cross-Modal Alignment" claims the same for Qwen2.5-VL-3B in its abstract (position R² = 0.97 from visual tokens). It is abstract-only and unverified (see QUEUE).
+- change: an eval-only read-out with the exp000 adapter, as a ride-along in the IDEA-017 job. No prediction change.
+  - In worktree infer.py, a forward hook on the Task A pass saves the hidden state at 3 LLM layers (e.g. layers at 1/3, 2/3 and the last) of the merged visual token(s) whose patch contains each object's projected GT centre.
+  - Fit closed-form ridge in torch (no sklearn, no new dependency) mapping state → GT camera-frame xyz, on about 1,000 `train` episodes.
+  - Report the held-out metric error per split (val_id, val_ood_config, val_diag_elev/count/corner) next to exp000's generated Task A error on the same objects.
+  - Write the outputs to job.log or a non-scored file, never to `pred/normal.jsonl`.
+- discriminates:
+  - Probe error stays near val_id on config/diag_elev while generated Task A degrades (0.016 → 0.136 m): the geometry is in the tokens and the learned text readout is viewpoint-specific. That favours training-side levers (IDEA-019 crops, IDEA-014 uv + depth targets, more viewpoint diversity).
+  - Probe error degrades as much: the visual representation itself does not carry metric geometry at unseen elevations. That favours input-side levers (IDEA-020/013 depth PE, IDEA-016/021 camera conditioning).
+  - It complements IDEA-017, which says *which factor* breaks; 030 says *where*.
+- cost: about 0.5 day of code, about 0.1 GPU-h on top of IDEA-017 (one extra forward pass on about 1k train episodes for probe fitting).
+- risk:
+  - The token choice matters. Pool over the 2×2 merged-token neighbourhood as a robustness check.
+  - Probes fit on train elevations (30-60°) may themselves extrapolate poorly to 12-25°. Also report a probe fit on half of val_diag_elev and tested on the other half: it separates "information absent" from "linear map changes with viewpoint".
+- status: proposed
+
+## IDEA-031 Latent-property error floor for Task B (derived baseline, no GPU)
+- source: research/literature/2023_physion_pp.md
+- background:
+  - The action states the impulse, and speed = impulse / (ρ·V).
+  - Density ρ ∈ [400, 800] and sliding friction μ ∈ [0.35, 0.6] are latent and cannot be inferred from one frame. This is Physion++'s 'w/o property' condition by construction, and every val split shares these ranges.
+  - For a Coulomb slider at fixed impulse and visible volume, the true displacement relative to that under mean latents (ρ̄ = 600, μ̄ = 0.475) spans about 0.45×-3.05×. This is the researcher's derivation, not a paper number.
+- change: a derived pred file scored by pinned code, with no model change.
+  - On an "isolated" subset (the target stays on the table and no other object moves, defined from GT metadata), predict p_t0 + (p_t1 − p_t0)·s for the target. s = (ρ/ρ̄)²·(μ/μ̄) for sliders and s = (ρ/ρ̄)² for balls (rolling friction is constant). Non-targets stay at GT.
+  - Write `pred/latent_floor.jsonl`, and write exp000's normal predictions on the same episodes to `pred/normal_isolated.jsonl`, so that `summarize` scores both on an identical subset.
+- discriminates:
+  - Floor ≳ half of exp000's error on the subset: the room for dynamics gains (IDEA-002 etc.) is limited, and beating the floor needs information beyond image + impulse.
+  - Floor small: latent ambiguity is negligible and the residual error is learnable.
+  - The floor is also the right yardstick for forces strong pushes, where displacements and thus latent-induced errors are largest.
+- cost: about 0.5 day of code, no training. Natural ride-along in the IDEA-017 job, which produces the exp000 preds.
+- follow-up if the floor is large: a privileged arm that states speed (m/s) instead of impulse in the action text, analogous to Physion++'s DPI-Net with latents (mass 60.1 → 75.9%). Its gain over exp000 upper-bounds what mass inference could buy. 1 SFT run; not proposed separately yet.
+- risk: approximate physics (no rotation, toppling or edge effects), hence the isolated subset only. Any non-zero error of this oracle on that subset is partly the approximation itself, so report it as an approximate floor.
+- status: proposed
