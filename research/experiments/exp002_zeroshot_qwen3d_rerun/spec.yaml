@@ -1,0 +1,71 @@
+id: exp002_zeroshot_qwen3d_rerun
+# SUPERSEDES exp001_zeroshot_qwen3d. Human note (research/STATE.md, 2026-10-24): before d4de761
+# every job ran main's physwm instead of the experiment snapshot (`python -m` put cwd=MAIN first on
+# sys.path). exp001 therefore ran main's infer.py (48 tokens/object, no per-split stats print), not
+# its reviewed harness. Its numbers, including swap-beats-normal on Task A val_id, the val_ood_config
+# Task A median of 1.000 (likely truncation at the 48-token cap) and C-003, are invalid as
+# specified. This run is the same spec (hypothesis, criteria, validity gate, ablations, budget) with
+# the same reviewed harness change, which now takes effect because jobs run from the snapshot dir.
+hypothesis: >
+  (A) Zero-shot Qwen3-VL-2B with its native bbox_3d prompt localises current 3D centres using the
+  image: Task A val_id all_mean(normal) is at least 0.05 m lower than Task A val_id all_mean(swap).
+  (B) Its Task B target error is worse than static: compare exp002 static gives ci95 lower bound > 0
+  (diff = exp002 - static).
+success_criteria:
+  A_supported: "taskA val_id all_mean(swap) - taskA val_id all_mean(normal) >= 0.05 m"
+  A_rejected:  "difference < 0.02 m"   # 0.02-0.05 m = inconclusive; also report the compare --task A CI
+  B_supported: "compare vs static: ci95[0] > 0"
+  B_rejected:  "compare vs static: ci95[1] < 0"
+  validity:    "object-missing rate <= 5% on every validation split (val_id, val_ood_*); otherwise the
+                run is reported as a harness/format result, not a model result, for the affected
+                split(s). The val_diag_* splits get the same rates reported, descriptively."
+  primary_metric: "val_ood_target_mean is reported against static and exp000_sft_baseline (compare,
+                   CI). No improvement is expected: this is a zero-shot reference, not an improvement
+                   attempt, so improvement_threshold (0.005 m) is not a success criterion here."
+  note: "(B) is descriptive only: static has oracle perception, so (B) does not by itself show
+         absence of dynamics knowledge."
+  if_it_fails: >
+    If missing_rate on val_ood_config is still > 5% with the 128-token cap and truncation_rate is low,
+    the config collapse is omission or label mismatch, not truncation, and IDEA-028 (label/omission
+    read-out on exp002 preds) becomes the next zero-shot step. If swap still beats normal on Task A
+    val_id with missing rates <= 5% in both modes, the exp001 anomaly was not a truncation artefact
+    and IDEA-024 (frame/scale audit) is next. If normal now beats swap by >= 0.05 m, (A) is supported
+    and exp001's rejection was an artefact of main's harness. Either way the stats lines test whether
+    per-split job.log prints are visible now that jobs run from the snapshot (IDEA-029 premise).
+  comparison_to_exp001: "context only, not a criterion: exp002 - exp001 per split shows what the
+                         48-token cap cost; exp001 is invalid as specified and is not a baseline."
+change: >
+  no training; native 3D-grounding prompt.
+  harness: qwen3d token cap 128/object (instrumentation, center unchanged)
+baseline: static
+kind: eval_only
+style: qwen3d
+ablations: [none, swap]
+budget_hours: 1.5
+# no eval_limit: an eval_limit < 500 breaks `compare` (exec.py:371 scores missing episodes as 1.0 m)
+seed: 0
+implementation:
+  - "Fresh worktree off current main (>= d4de761, executor runs from the snapshot dir). Do NOT reuse
+     the exp001 worktree. Re-apply exp001's reviewed infer.py diff (git diff 351537c 0776d91 --
+     physwm/vlm/infer.py; cherry-pick that hunk only), nothing else."
+  - "physwm/vlm/infer.py main(), line 81: per_obj = 128 if args.style == 'qwen3d' else 48;
+     max_new = 48 + per_obj * max(len(ep.objects) ...). center must stay byte-identical (48 + 48*n)
+     so exp000 remains reproducible."
+  - "physwm/vlm/infer.py main(), per split (counters reset per split): after the tqdm loop print
+     `[split] mode=<image_mode> answers=N parse_rate=.. missing_rate=.. truncation_rate=..` with
+     flush=True. missing_rate = None slots / all object slots (parse_answer pre-fills every id with
+     None, parse.py:57). truncation_rate = fraction of raw answers not matching r'\\]\\s*(```)?$'
+     after strip (upper bound; '}'-terminated answers count as truncated, as accepted in exp001
+     pre-review round 2)."
+  - "Print each stats line with a leading newline (print('\\n' + line, flush=True)) so it never
+     shares a physical line with a tqdm frame. Logging only; no change to pred records, parsing or
+     scoring."
+  - "Splits come from exec.py op_job: normal pass covers val_id, val_ood_*, val_diag_elev/count/
+     corner; ablations none and swap run on val_id only. No change to exec.py, prompts.py, parse.py
+     or any pinned file. No new dependencies."
+  - "spec.yaml as here; commit spec + infer.py; clean worktree before submit. Pre-review needs only
+     a diff check against exp001 round 2 (same diff plus the leading newline)."
+  - "Report: results / compare vs static / compare vs exp000_sft_baseline / compare exp002:swap
+     exp002:normal --task A|B --splits val_id; per-split parse/missing/truncation table quoted from
+     `agent.sh log`; Task A val_ood_config and val_diag_* reported separately. image_dependence_gap
+     is uninterpretable for zero-shot (none parses to nothing); use swap."

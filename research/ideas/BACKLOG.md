@@ -3,7 +3,34 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
-## Ranking (planner, 2026-10-24; re-rank only, no new spec)
+## Ranking (planner, 2026-10-24, round 2; spec: exp002_zeroshot_qwen3d_rerun)
+Inputs: exp001 report + review_post, the HUMAN NOTE in STATE.md (executor bug, fixed in d4de761), the coordinator directive (next spec = exp001 rerun), and literature notes 2025_qwen3_vl, 2026_quantiphy, 2023_omni3d_cube_rcnn, 2026_camera_robust_3d_tooluse.
+
+What changed since round 1:
+- **exp001 is invalid as specified.** It ran main's infer.py: a 48-token/object cap and no stats print. Its swap-beats-normal result, its config Task A median of 1.000 (likely truncation: 240/288 tokens for 4/5 objects against ~260/325 needed, exp001/review_pre.md §1) and C-003 describe main's harness, not the spec. Every exp001-specific read-out (IDEA-024, IDEA-028) has to be retargeted at exp002's preds and made conditional on exp002's outcome.
+- **IDEA-029's premise is wrong.** The stats lines were never printed, so the tqdm filter was not at fault. Whether job.log prints are visible now is untested. exp002 tests it for free (stats lines with a leading newline). Until exp002 shows them, keep visible diagnostics in pinned-scored pred/*.jsonl files.
+- exp000 stays valid (no code change). The round-1 feasibility notes below still hold.
+- New pinned-visible read-out trick (IDEA-026 note): a counterfactual-action pred file scored against the *real* GT gives an "action-dependence gap" in results.md, analogous to the image gap, with no job.log needed.
+
+Top 5 (for / against; effect on primary; cost; risk; information value):
+1. **IDEA-001R exp001 rerun → planned: exp002_zeroshot_qwen3d_rerun.** For: human directive (STATE HUMAN NOTE). The reviewed harness never ran (review_pre §1 predicted config truncation), and the diag splits now come for free. Against: zero-shot is ~0.38 m above static (exp001, harness-level), so no primary gain is possible. Effect on primary: none (reference only). Cost: ~0.5 GPU-h expected, 1.5 budgeted (the diag splits add ~1800 samples). Risk: none protected; instrumentation only, center byte-identical. Info: high for validity. It settles whether exp001's (A) rejection and the config collapse were cap artefacts, it gates IDEA-024/028/023, and it tests job.log visibility, which every log-based diagnostic below depends on.
+2. **IDEA-017 exp000 adapter, eval_only, on val_diag_elev/count/corner.** For: the top open question (why config is worse than static: 0.269 vs 0.241). Zero code change, since diag splits are inferred automatically. Greedy decoding gives a free determinism check (normal primary should reproduce 0.3136). Limits note and camera_robust note (K/viewpoint brittleness of RGB-only Qwen3-VL). Against: three single-factor splits can miss an interaction (the effect of all three together could exceed the sum). Effect: none directly. It picks the config lever: elev → 016/014/020, count → 004, corner → dynamics/002. Config is 1/3 of the primary, and closing it to static is worth ≥ 0.01 m. Cost: ~0.25 GPU-h (normal pass + `none` ablation, which is mandatory for image_dependence_gap). Risk: none. Info: **highest per GPU-h of any idea that bears on the primary.** Run it right after exp002.
+3. **IDEA-025 + IDEA-026 counterfactual action tests on exp000 (forces).** For: forces gives 78% of exp000's gain (exp000 review_post §b). QuantiPhy shows VLMs anchor to priors under counterfactual inputs (−70-80% MRA). The direction flip, scored against real GT in `pred/cf_flip.jsonl`, is visible in results.md with no pinned change. Against: the impulse slope (025) needs a custom statistic, so it needs job.log (wait for exp002 to confirm visibility) or two pinned-scored α files (the error-vs-α curve is a weaker read-out than the slope). Effect: none directly. If the model ignores the action, C-002's gain is a prior and IDEA-002 is promoted. Cost: ~0.15 GPU-h. Risk: counterfactual files must never go into normal.jsonl. Two prompt interventions in one job are read-outs of the same adapter; split them if the reviewer counts them as two changes. Info: high.
+4. **IDEA-006 own-static derived file (exp000 adapter).** For: it separates perception from dynamics on every split, diag splits included. That makes IDEA-017 interpretable: diag Task B vs own-static says whether a factor breaks perception only or dynamics as well. Against: one worktree infer.py addition (a derived file). It fits best as a ride-along in the IDEA-017 job: a read-out, no prediction change, declared in the spec. Effect: none directly. Cost: +0 if it rides along. Risk: none. Info: high, together with #2.
+5. **IDEA-002 displacement output.** The first improvement attempt on the primary. For: Task A is already good on objects and forces (0.024/0.016), so the remaining Task B error there is dynamics. Against: it should wait for #2/#3/#4 to say whether config is a perception or dynamics failure and whether forces is prior-driven. Effect: plausibly −0.01 to −0.03 on the primary. Cost: 1.4 GPU-h. Risk: own centre + delta compounds the Task A error. Info: high.
+
+Then:
+6. IDEA-008 forces stratification + training-prior baseline. Mostly superseded by 025/026 (within-episode interventions). Keep only the prior baseline, as a derived pred file.
+7. IDEA-028 / IDEA-024 read-outs, **retargeted at exp002 preds** and conditional. Run only if exp002 shows missing > 5% (028: labels, omission) or swap ≥ normal with low missing (024: frame/scale). The exp001 preds are not worth reading.
+8. IDEA-023 verbatim native prompt. Only after exp002, and only if (A) stays unsupported with valid missing rates.
+9. IDEA-016 camera pose in prompt: first, if IDEA-017 implicates elevation.
+10. IDEA-014 (u, v, depth) output: Cube R-CNN and camera_robust evidence. Second geometry lever if elevation is implicated.
+11. IDEA-004 set-of-marks: jumps to #5 if val_diag_count carries the config failure.
+12. IDEA-022 Depth-Anything-V2 vs elevation (verified loadable): only if elevation is implicated.
+13. IDEA-020 depth PE; 14. IDEA-019 K-crops (+ IDEA-027 eval, K is fixed in all val splits so it does not touch the primary); 15. IDEA-003; 16. IDEA-015; 17. IDEA-013; 18. IDEA-018; 19. IDEA-021; 20. IDEA-005 (SD-VLM: harmful).
+- IDEA-029: rejected (premise wrong, see its entry).
+
+## Ranking (planner, 2026-10-24, round 1; superseded by round 2 above, kept for the feasibility notes)
 Inputs: exp000 report + review_post, STATE open questions, literature notes 2025_limits_of_finetuning, 2026_onecanvas, 2025_sd_vlm, 2025_spacemind. exp001_zeroshot_qwen3d is in pre-review (REVISE) and is not touched here.
 Principle: simple baseline first. Cheap diagnostics that settle *why* val_ood_config fails and *whether* the forces gain is force-conditioned come before any architectural change.
 
@@ -39,7 +66,8 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 ## IDEA-001 Zero-shot with the native 3D-grounding prompt
 - source: Phase 1 smoke test (the `center` prompt yields `[0,0,0]`)
 - change: no training; `style: qwen3d`
-- status: done: exp001_zeroshot_qwen3d (2026-10-24). (B) worse than static, supported at pipeline level, CI [0.358, 0.396]. (A) rejected at harness level: swap beats normal on Task A val_id (−0.051, CI [−0.074, −0.028]). Both provisional until the per-split missing rates are recovered (outbox/exp001_joblog_missing_rate.md). Follow-ups: IDEA-028, IDEA-024, IDEA-023.
+- history: exp001_zeroshot_qwen3d (2026-10-24) is **invalid as specified**. Per the HUMAN NOTE in STATE.md, it ran main's infer.py (48-token/object cap, no stats print), not its reviewed harness. Its (A)/(B) verdicts, swap-beats-normal and the config median of 1.000 describe main's harness only.
+- status: planned: exp002_zeroshot_qwen3d_rerun (same spec, harness change re-applied on a fresh worktree off main ≥ d4de761). Follow-ups IDEA-028/024/023 are conditional on exp002's outcome.
 
 ## IDEA-002 Predict the displacement instead of the absolute future position
 - source: Phase 1 design. Absolute targets mix perception error and dynamics error.
@@ -126,6 +154,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: sim generation plus about 0.2 GPU h eval
 - note (planner, 2026-10-24): seeds are not actually the blocker. `op_gen` accepts `dev_*` splits with seeds outside [1M, 9M), e.g. ≥ 9,000,000 (exec.py:417-428). The real blockers: (1) `op_gen` only takes configs from main's `configs/`, so three new single-factor sim configs must land on main; (2) pinned `evaluate_experiment` loads only `validation_splits` episodes (exec.py:295-296), so predictions on `dev_*` splits would be silently skipped. Scoring them needs a pinned change, or unpinned scoring in worktree code, which a human should approve.
 - status: unblocked (human, 2026-10-24). Splits `val_diag_elev` (elevation 12–25° only), `val_diag_count` (4–5 objects only) and `val_diag_corner` (corner cluster with min_gap 0.01 only), 300 episodes each, configs `configs/sim_diag_*.yaml`, policy `data.diagnostic_splits`. Every job now runs inference on them and lists them in results.md (not in the primary metric); `compare --splits` gives CIs. To get exp000 numbers, plan an eval_only spec with `lora: /var/tmp/toyi/wm/experiments/exp000_sft_baseline/model/adapter`.
+- note (planner, 2026-10-24, round 2): ranked #2. It is the next spec after exp002 (suggested id exp003_exp000_diag_eval). The change is none: same adapter, `style: center`, `ablations: [none]`. Optional ride-along: the IDEA-006 own-static derived file, declared in the spec.
 
 ## IDEA-018 LoRA on the vision encoder too
 - source: research/literature/2025_limits_of_finetuning.md
@@ -177,6 +206,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: s ≈ 1.07 with a large error drop points to a Cube R-CNN/Omni3D virtual-depth convention (f_v = H_v = 512 vs our f/H ≈ 1.072), which is fixable post hoc. A small pixel error with a large z error means metric depth fails (→ IDEA-014/015). A large pixel error means poor 2D grounding of small primitives (→ IDEA-004). A sign flip on an axis would mean a frame-convention bug, although the cookbook projection says Qwen uses the same OpenCV frame as us.
 - cost: about 0.5 day, no GPU. Needs the exp001 pred file; if `agent.sh` cannot read it, run it as a read-out inside a worktree eval job.
 - note (review of exp001_zeroshot_qwen3d): priority up. On val_id, swap scores *better* than normal (Task A −0.051 m, CI [−0.074, −0.028]). An axis sign flip or offset is the one simple mechanism under which image-driven predictions lose to wrong-image predictions. Run (i)-(ii) together with IDEA-028 in the same read-out.
+- note (planner, 2026-10-24, round 2): the "swap beats normal" motivation came from exp001, which is invalid as specified (48-token cap). Run this audit on exp002's preds, and only if exp002 reproduces swap ≥ normal with missing_rate ≤ 5% in both modes.
 - refinement (researcher, 2026-10-24, research/literature/2023_omni3d_cube_rcnn.md): Cube R-CNN-style virtual depth (f_v = H_v) amounts to a virtual camera whose focal is H in original pixels. Under it, X_v = X and Y_v = Y, and only z is rescaled: z_v = z·H/f. For our K (fy ≈ 480.4, H = 448) the virtual-camera hypothesis therefore predicts z_gt ≈ 1.072·z_pred with **x and y scales ≈ 1**, a fitted uniform xyz scale would point to something else. A test with no fitting: project the predictions with K_v (fx = fy = 448, cx = cy = 224) and with our K. Under the hypothesis, K_v gives the lower pixel error, and with our K the pixels are over-scaled radially by ~1.072 about (224, 224). Decision rule: report raw outputs as the exp001 primary. Report the z×1.072 variant only as a labelled post-hoc diagnostic, and only if both tests agree. The bias is ≤ ~0.09 m at our depths, so it cannot explain a ~0.7 m error. It does not apply to SFT models (constant K is absorbed).
 - status: proposed
 
@@ -192,6 +222,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: eval-only with the exp000 adapter, in the same job as IDEA-025. Swap the direction phrase in the action text to its opposite (left↔right, away↔toward) and keep the image and impulse fixed. Report the fraction of targets whose predicted displacement, projected on the *stated* camera-frame direction, is positive: original vs flipped prompt.
 - discriminates: ≳90% sign agreement after the flip means the model reads the action direction. Lower agreement means it infers the direction from the scene layout. That is a scene-prior shortcut, plausible because `aim_at_other_prob: 0.4` makes "toward another object" guessable from the image.
 - cost: about 0.05 GPU h on top of IDEA-025
+- note (planner, 2026-10-24, round 2): a pinned-visible version needs no job.log. Write the flipped-prompt predictions to `pred/cf_flip.jsonl`, which pinned code scores against the *real* GT. If the model reads the direction, Task B target error under the flip should rise well above normal on val_id/val_ood_forces, by about 2× the displacement for on-table sliders. If error(cf_flip) ≈ error(normal), the action direction is ignored. This "action-dependence gap" mirrors image_dependence_gap. The sign-agreement statistic stays a job.log extra, once exp002 confirms log visibility.
 - status: proposed
 
 ## IDEA-027 Test-time intrinsics-shift eval (crop-zoom val_id, K rewritten in the prompt; diagnostic)
@@ -216,10 +247,11 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
   - Variance shrinkage: r ≈ 0+, std(normal) > std(swap), and the constant prior beats normal.
   - For config, (e) separates omission (few objects per answer) from truncation (hit-cap) from label mismatch (a).
 - cost: < 0.05 GPU h (model load not needed); about 0.5 day of code
-- status: proposed
+- note (planner, 2026-10-24, round 2): exp001's preds come from main's 48-token harness and are invalid as specified. Retarget this read-out at exp002_zeroshot_qwen3d_rerun's preds, and run it only if exp002 shows missing_rate > 5% on some split or swap ≥ normal on Task A val_id. (a) and (e) are partly answered by exp002's own stats lines.
+- status: proposed (conditional on exp002)
 
 ## IDEA-029 Fix `op_log` dropping stdout lines that share a physical line with a tqdm frame (tooling)
 - source: review of exp001_zeroshot_qwen3d
 - change: in pinned `physwm/agent/exec.py:356`, apply the tqdm filter to the segment after the last `\r`, not to the whole line. Alternatively, surface missing_rate in results.md (exp000 review item). Interim worktree workaround: print `"\n"` before every stats line.
 - discriminates: n/a. Without this fix, every pre-review logging requirement routed through job.log is unverifiable, and exp001's validity gate failed to be checkable for exactly this reason.
-- status: needs-human (pinned file)
+- status: rejected: premise wrong (human, 2026-10-24). exp001's stats lines were never printed because the job ran main's infer.py (executor bug, fixed in d4de761), so op_log was not at fault. exp002 prints its stats lines with a leading newline as a cheap guard and so tests job.log visibility directly.
