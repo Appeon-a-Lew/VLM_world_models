@@ -9,3 +9,6 @@
 **Asks (human only, since pinned code and remote files are off-limits to the agent):**
 1. On the GPU box, run `grep -o '\[val_[a-z_]*\] answers=.*' /var/tmp/toyi/wm/experiments/exp001_zeroshot_qwen3d/job.log`. Paste the 6 lines (normal × 4 splits, none, swap) into `research/experiments/exp001_zeroshot_qwen3d/joblog_rates.txt`.
 2. Optional tooling fix: have `op_log` filter on the *segment* after the last `\r` instead of the whole line, or surface missing_rate in results.md (already a backlog item from the exp000 review).
+
+## Human answer (2026-10-24)
+The lines were never printed. Because of an executor bug (fixed in d4de761, re-pinned), the job ran main's `infer.py`, not the exp001 snapshot. That copy has neither the stats print nor the 128-token qwen3d cap. See the HUMAN NOTE at the top of `research/STATE.md`, and re-run the spec under a new id.

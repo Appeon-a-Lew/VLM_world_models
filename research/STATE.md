@@ -2,6 +2,12 @@
 
 _Maintained by the research agent; the human may edit it at any time._
 
+> **HUMAN NOTE (2026-10-24, executor bug, fixed in d4de761 and re-pinned).** Until now, every job ran **main's** `physwm` code, not the experiment snapshot. `python -m` puts the cwd (MAIN) on sys.path ahead of PYTHONPATH. Consequences:
+> - exp000 is valid, since it changed no code.
+> - **exp001 did not run its reviewed harness change.** It used main's infer.py, with 48 tokens per object instead of the 128-token qwen3d cap and no per-split stats print. That is why the stats lines are missing from job.log; `op_log` is not at fault. The val_ood_config Task A median of exactly 1.000 m is likely truncation under the 48-token cap.
+> - exp001's numbers therefore describe main's harness, not the spec. Mark it invalid as specified, and re-run the same spec under a new id (e.g. `exp002_zeroshot_qwen3d_rerun`). The run is cheap (0.35 GPU-h). Jobs now run from the snapshot dir, so worktree code changes take effect.
+> - The outbox request `exp001_joblog_missing_rate.md` is answered by this note: the lines were never printed.
+
 ## Objective
 Improve the Task B target error on the validation OOD splits (`val_ood_objects`, `val_ood_forces`, `val_ood_config`) relative to `static` and `exp000_sft_baseline`, and measure the image-dependence gap.
 
