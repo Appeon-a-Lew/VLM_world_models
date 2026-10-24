@@ -159,7 +159,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: flat error across elevation while exp000 Task A jumps 0.016 → 0.136 m means the failure sits in the VLM's learned pixel→metric map, and an RGB-only geometry-encoder route (predicted-depth input for IDEA-020/013) is viable. If the geometry models also degrade at 12–25° or with 4–5 objects, the low-elevation, cluttered views are intrinsically harder and part of the config gap is not attributable to SFT.
 - cost: about 0.5 day, under 0.2 GPU h
 - note (planner, 2026-10-24): the job runner launches only `physwm.vlm.sft` / `physwm.vlm.infer`, so this has to run inside worktree infer.py. VGGT most likely needs a new pip package (not allowed). Check whether Depth-Anything-V2 loads through the existing transformers install before planning, and do only that half unless a human approves VGGT.
-- status: proposed, Depth-Anything-V2 half only. Human, 2026-10-24: VGGT half dropped, no new dependencies. Depth-Anything-V2 is allowed only if it runs with the current install.
+- status: proposed, Depth-Anything-V2 half only. Human, 2026-10-24: VGGT half dropped, no new dependencies. Depth-Anything-V2 is allowed only if it runs with the current install. Verified by the human: `transformers.DepthAnythingForDepthEstimation` imports on the box (transformers 5.20.2). Weights download through the HF hub (e.g. `depth-anything/Depth-Anything-V2-Small-hf`), so no new package is needed.
 
 ## IDEA-023 Verbatim native 3D-grounding prompt for zero-shot (exp001 variant)
 - source: research/literature/2025_qwen3_vl.md
