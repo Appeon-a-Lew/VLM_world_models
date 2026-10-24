@@ -66,6 +66,9 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - Diagnostic splits `val_diag_elev`, `val_diag_count`, `val_diag_corner` (300 episodes each) are inferred in every job and listed in results.md, not in the primary metric.
 - Qwen3-VL bbox_3d centre/frame/units match our parser (camera frame, metres). Our qwen3d prompt is not Qwen's native template (adds K, frame sentence, multiple objects per query); exp001 measures "Qwen3-VL with our prompt" (IDEA-023).
 
+## Blocked (2026-10-24)
+- exp005_exp000_repro FAILED on nc-10-1-1: `Qwen3VLVideoProcessor requires the Torchvision library` (env gap, not code). Needs human to install torchvision in the venv; see `research/outbox/needs_human_torchvision_nc-10-1-1.md`. exp004 depends on exp005's adapter. Until then: literature and planning only.
+
 ## Open questions
 - Why does zero-shot exp002 do worse with the correct image than with a swapped one: a frame flip or offset, or hedging toward a default output? (IDEA-024/028/032)
 - exp000's val_ood_config failure isn't explained by any single factor (exp003). Is it an interaction (elev × corner, IDEA-036) or additive? Is the lost dynamics gain lost skill, or harder multi-body contact (IDEA-035)? Does the split depend on the decomposition path (IDEA-034)?
