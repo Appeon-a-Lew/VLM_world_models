@@ -11,7 +11,9 @@ Top = next. The researcher marks items `[x]` when read and appends up to 3 follo
     - [ ] VGGT: Visual Geometry Grounded Transformer (Wang et al., CVPR 2025, arXiv 2503.11651). SpaceMind's frozen geometry encoder. Check its single-image depth/point-map accuracy and camera convention before running IDEA-022.
 
 ## Question-driven (open question in STATE.md: does the model use the stated impulse or regress to a prior? Not cited by a read paper)
-- [ ] QuantiPhy: A Quantitative Benchmark Evaluating Physical Reasoning Abilities of VLMs (Puyin et al., CVPR 2026, arXiv 2512.19526, https://arxiv.org/abs/2512.19526). Gives VLMs a numeric prior (size/velocity) and tests counterfactual priors. A search summary of the abstract (not yet read) says models "lean heavily on pre-trained world knowledge" over the supplied inputs. Directly relevant to IDEA-008 and the design of a counterfactual-impulse test.
+- [x] QuantiPhy: A Quantitative Benchmark Evaluating Physical Reasoning Abilities of VLMs (Puyin et al., CVPR 2026, arXiv 2512.19526, https://arxiv.org/abs/2512.19526). Gives VLMs a numeric prior (size/velocity) and tests counterfactual priors. → `2026_quantiphy.md`
+  - [ ] Thinking in Space / VSI-Bench (Yang et al., arXiv 2412.14171; verify the ID). The source of the MRA metric and of blind (no-vision) baselines for metric spatial QA. Qwen3-VL-2B scores 53.9 on it.
+  - [ ] Physion++: Evaluating Physical Scene Understanding that Requires Online Inference of Different Physical Properties (Tung et al., 2023; arXiv ID to verify). Tests mass/friction inference from dynamics. Our impulse→speed step needs mass inferred from the image.
 - [ ] "Selective Cross-Modal Alignment in Vision-Language Models: Why Position Grounding Succeeds but Physical Reasoning Fails" (NeurIPS 2026, https://neurips.cc/virtual/2026/157263; arXiv ID not yet found). According to a search summary, probes Qwen2.5-VL-3B on synthetic physics. Velocity is decodable from the visual tokens but unused by the language readout. Mirrors our Task A ok / Task B weak pattern; could motivate a probing diagnostic. Verify the paper before relying on it.
 - [x] "Limits of Fine-Tuning" (VLM physical reasoning). Earlier work says SFT fails OOD; this is the claim exp000 tests. → Schulze Buschoff et al., ICML 2025, arXiv 2502.15678, `2025_limits_of_finetuning.md`
   - [ ] Can vision language models learn intuitive physics from interaction? (arXiv 2602.06033). The follow-up shows that RL from interaction also fails to generalise. Probably the "Learning Physics from Interaction" item below; verify.
@@ -20,7 +22,10 @@ Top = next. The researcher marks items `[x]` when read and appends up to 3 follo
 - [ ] "World Models from Inverse Dynamics". Inverse dynamics as a prior.
 - [ ] "Learning Physics from Interaction"
 - [ ] Physion: Evaluating Physical Prediction from Vision in Humans and Machines (Bear et al., 2021). Benchmark design, OOD scenarios.
-- [ ] Qwen3-VL technical report. The 3D-grounding output format, the camera conventions it was trained with, and what spatial data it saw.
+- [x] Qwen3-VL technical report. The 3D-grounding output format, the camera conventions it was trained with, and what spatial data it saw. → Bai et al., arXiv 2511.21631, `2025_qwen3_vl.md`
+  - [ ] Omni3D / Cube R-CNN (Brazil et al., CVPR 2023, arXiv 2207.10660). Qwen3-VL "follows Omni3D" for its virtual camera. The paper defines the frame (+x right, +y down, +z in) and virtual depth z_v = z·(f_v/f)·(H/H_v), f_v = H_v = 512. Read in full: does Omni3D include tabletop data (Objectron), and how exactly is the virtual camera used? This bears on IDEA-024.
+  - [ ] Towards Camera-Robust 3D Localization: Equation-Anchored Tool-Use for MLLMs (Jiang et al., arXiv 2605.19528, preprint). Abstract: MLLMs "overfit to a canonical training intrinsic"; tested with K rescaled 0.5×-1.5×; back-projection with K plus sampled depth fixes it. Direct evidence for IDEA-019/014.
+  - [ ] N3D-VLM: Native 3D Grounding Enables Accurate Spatial Reasoning in VLMs (arXiv 2512.16561). Feeds estimated depth and intrinsics so that boxes come out in metric camera frame. An alternative route to IDEA-020/013 without GT depth.
 
 ## Background
 - [ ] Kubric (Greff et al., 2022) / MOVi datasets. A candidate second data source with ground-truth 3D trajectories.

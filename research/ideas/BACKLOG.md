@@ -160,3 +160,31 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: about 0.5 day, under 0.2 GPU h
 - note (planner, 2026-10-24): the job runner launches only `physwm.vlm.sft` / `physwm.vlm.infer`, so this has to run inside worktree infer.py. VGGT most likely needs a new pip package (not allowed). Check whether Depth-Anything-V2 loads through the existing transformers install before planning, and do only that half unless a human approves VGGT.
 - status: proposed, Depth-Anything-V2 half only. Human, 2026-10-24: VGGT half dropped, no new dependencies. Depth-Anything-V2 is allowed only if it runs with the current install.
+
+## IDEA-023 Verbatim native 3D-grounding prompt for zero-shot (exp001 variant)
+- source: research/literature/2025_qwen3_vl.md
+- change: for `style: qwen3d`, use the Qwen3-VL report's App. B.5 template, one query per object: `Locate the {name} in the provided image and output their positions and dimensions using 3D bounding boxes. The results must be in the JSON format: [{"bbox_3d":[x_center, y_center, z_center, x_size, y_size, z_size, roll, pitch, yaw],"label":"category"}]`. Drop the scene sentence, the text intrinsics and the `FRAME` sentence. For Task B keep the action line. Single change: the prompt text.
+- expected: our current qwen3d prompt adds text K, a frame sentence and multiple objects per query. None of these appears in Qwen3-VL's 3D training or eval format, which canonicalises the intrinsics away into a virtual camera. A clear drop in the Task A val_id error means our additions hurt the zero-shot readout, so exp001's "native zero-shot" conclusion should use this prompt. No change means the prompt is not the bottleneck.
+- cost: worktree prompt option plus about 0.3 GPU h eval (one query per object)
+- status: proposed
+
+## IDEA-024 Frame/scale audit of zero-shot Task A predictions (diagnostic)
+- source: research/literature/2025_qwen3_vl.md
+- change: analysis of exp001 val_id Task A outputs, no GPU. (i) Project the predicted and GT centres with K and report the pixel error separately from the depth (z) error. (ii) Fit one global depth scale s (z_gt ≈ s·z_pred) and per-axis sign/scale, then report the error after correction.
+- discriminates: s ≈ 1.07 with a large error drop points to a Cube R-CNN/Omni3D virtual-depth convention (f_v = H_v = 512 vs our f/H ≈ 1.072), which is fixable post hoc. A small pixel error with a large z error means metric depth fails (→ IDEA-014/015). A large pixel error means poor 2D grounding of small primitives (→ IDEA-004). A sign flip on an axis would mean a frame-convention bug, although the cookbook projection says Qwen uses the same OpenCV frame as us.
+- cost: about 0.5 day, no GPU. Needs the exp001 pred file; if `agent.sh` cannot read it, run it as a read-out inside a worktree eval job.
+- status: proposed
+
+## IDEA-025 Counterfactual impulse scaling (action-dependence test)
+- source: research/literature/2026_quantiphy.md
+- change: eval-only with the exp000 adapter. Keep the image fixed and multiply the impulse number in the action text by α ∈ {0.5, 2}. Read out the target's predicted displacement d̂(α) = ‖pred_B − own pred_A‖ and the median log-log slope log(d̂(2)/d̂(0.5))/log 4, split by sliders vs balls, on val_id and val_ood_forces. Flag episodes whose scaled speed leaves train [0.3, 1.6] m/s. Single change: the impulse value in the prompt.
+- discriminates: slope ≈ 2 (d ∝ v² for on-table sliding) means physics-consistent use of the impulse. Slope ≈ 0 means anchoring to the training displacement prior (QuantiPhy: counterfactual priors drop MRA by about 70-80%). 0 < slope < 2 means partial use. It is a within-episode intervention, so it avoids the mass, edge-distance and mode confounds of IDEA-008's cross-episode regression. Run it in the same job as IDEA-008.
+- cost: worktree prompt option plus about 0.15 GPU h. Counterfactual predictions have no GT, so log the slope to job.log and never write them to `pred/normal.jsonl`. A scored version needs re-simulated counterfactual GT (`op_gen` change, human).
+- status: proposed
+
+## IDEA-026 Counterfactual direction flip (action-dependence test)
+- source: research/literature/2026_quantiphy.md
+- change: eval-only with the exp000 adapter, in the same job as IDEA-025. Swap the direction phrase in the action text to its opposite (left↔right, away↔toward) and keep the image and impulse fixed. Report the fraction of targets whose predicted displacement, projected on the *stated* camera-frame direction, is positive: original vs flipped prompt.
+- discriminates: ≳90% sign agreement after the flip means the model reads the action direction. Lower agreement means it infers the direction from the scene layout. That is a scene-prior shortcut, plausible because `aim_at_other_prob: 0.4` makes "toward another object" guessable from the image.
+- cost: about 0.05 GPU h on top of IDEA-025
+- status: proposed
