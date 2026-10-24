@@ -3,6 +3,53 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
+## Ranking (planner, 2026-10-24, round 4; spec: exp004_exp000_oracle_anchor)
+Inputs: exp003 report + review_post (AMEND adopted), CLAIMS C-005..C-008, literature notes 2025_pixels_to_principles_probing and 2024_physics_context_builders, exec.py / metrics.py (current main), exp003 worktree infer.py / derived.py.
+
+What changed since round 3 (exp003, research/experiments/exp003_exp000_diag_eval/report.md):
+- CI-robust: no single config factor reproduces exp000's config failure (C-006). Every diag split beats static.
+- CI-solid: the own-perception cost on config is +0.056 [0.048, 0.065] (val_id +0.002). Perception degrades at elev (P 0.55) and corner (P 0.52), not with count (P 0.03, C-008). **IDEA-004 dropped.**
+- The dynamics gain falls from −0.113 (id) to −0.028 (config); motion-normalised K goes 0.424 → 0.116. ΔG vs ΔC3 is not CI-separable, and the split depends on the decomposition path (review_post §2 Point 2).
+- New planner observation that shapes the next spec: the own-static path *mechanically* shrinks G when perception is poor. With perception error e and true displacement Δ, a perfect Δ̂ = Δ still gives G = ‖e‖ − ‖e − Δ‖, and |G| < ‖Δ‖ by the triangle inequality. With e ≈ 0.13 m and Δ ≈ 0.24 m (config), perfect dynamics would already score K ≈ 0.5, not 1. So part of 0.424 → 0.116 can be a perception artefact. IDEA-035's own-path strata (isonormal/contnormal) would carry the same artefact into every stratum. They should run on the oracle-anchored path of IDEA-034, which merges 034 and 035 into one read-out.
+- Routing per review_post: cheap discriminators first, and IDEA-002 is not ranked above the geometry levers on config grounds.
+- Pinned constraints (unchanged): derived stems must match `[a-z]*` (exec.py:374); `compare` scores missing episodes as unparsed (exec.py:384-390), so subset read-outs need hybrid files with a neutral filler; `compare --task A … static` is refused; greedy inference is bit-reproducible (C-005).
+
+Top 5 (for / against; effect on primary; cost; risk; information value):
+1. **IDEA-034 + IDEA-035, oracle-anchored and physics-stratified → planned: exp004_exp000_oracle_anchor.**
+   - For: the reviewer's alternatives 2 and 3 (exp003 review_post §3), in one eval-only job. GT_t0 + (B̂ − Â) removes the additive perception offset. Stratifying by iso / contact / off-table (from GT metadata) separates lost skill from harder physics. Each outcome picks the next 1.4 GPU-h training run (R1/R2 → geometry lever IDEA-014; R3 → IDEA-002; R4 → IDEA-025/026).
+   - Against: A/B inconsistency adds noise to B̂ − Â. It biases toward "skill lost", so a gate on :oracleanchor unmoved_mean conditions only the FALSIFIED reading. n_iso on config may be small (precondition ≥ 30). The strata are selected on outcome; normalising by displacement handles magnitude but not selection.
+   - Effect on primary: none (eval only). Its value is choosing between two levers worth roughly −0.01 to −0.025 on the primary.
+   - Cost: ~0.25 GPU-h (exp003 took 0.214).
+   - Risk: privileged GT t=0 in derived files only, never in normal.jsonl. No protected change.
+   - Info: highest per GPU-h. Every outcome changes the next spec.
+2. **IDEA-026, then IDEA-025: counterfactual actions on exp000 (forces).**
+   - For: forces supplies −0.154 of exp000's per-split gain (78% of the aggregate; exp000 review_post §b). QuantiPhy (research/literature/2026_quantiphy.md) shows VLMs anchoring to priors. 026's `pred/cfflip.jsonl` is pinned-scored against the real GT, so it gives an action-dependence gap with a paired CI and needs no job.log. Use stem `cfflip`, not `cf_flip`: exec.py:374.
+   - Against: an input intervention, so it is its own spec, not a ride-along. 025's slope is a job.log statistic.
+   - Effect: none directly. If the action is ignored, C-002's forces gain is a prior and IDEA-002 is promoted regardless of exp004.
+   - Cost: ~0.15 GPU-h each. Risk: none protected. Info: high, and it is the R4 branch of exp004.
+3. **IDEA-014 (u, v, depth) output: first geometry improvement attempt.**
+   - For: the config perception cost is the CI-solid component (C3 +0.056). Perception degrades on both elev and corner, and IDEA-016 (camera pose) can only address elev. Cube R-CNN and camera_robust_3d_tooluse support the parameterisation (research/literature/2023_omni3d_cube_rcnn.md, 2026_camera_robust_3d_tooluse.md).
+   - Against: depth along low-elevation rays may stay viewpoint-tied. A parser and target change is needed (no pinned change, since scoring stays camera-frame xyz).
+   - Effect: halving config's perception cost is worth ≈ −0.009 on the primary, more if it also restores the own-path G.
+   - Cost: 1.4 GPU-h. Info: high, and its outcome unlocks IDEA-015.
+   - Conditional on exp004 R1/R2.
+4. **IDEA-002 displacement output: first dynamics improvement attempt.**
+   - For: in-distribution K is only 0.424, and forces carries most of the error mass (0.510).
+   - Against: on config grounds it is not yet justified (review_post §2 Point 3). The PCB evidence (research/literature/2024_physics_context_builders.md) favours end-to-end and supports 002 only as a dynamics lever. Own centre + delta compounds the Task A error.
+   - Effect: −0.01 to −0.03 if a dynamics prior is the bottleneck.
+   - Cost: 1.4 GPU-h. Info: high.
+   - Promoted by exp004 R3 or by IDEA-025/026 showing the action is ignored.
+5. **IDEA-036 two-factor elev × corner split.** For: separates (4) interaction from (5) diffuse. Super-additive perception (Σ ΔC3 0.042 vs 0.054) hints at occlusion. Against: it does not by itself pick a lever. Cost: < 0.1 GPU-h once data exist. **needs-human** (outbox sent).
+
+Then:
+6. IDEA-016 camera pose in prompt: elev-only geometry lever, runner-up to 014.
+7. IDEA-030 probes (5 sites + controls per research/literature/2025_pixels_to_principles_probing.md): says *where* perception breaks; about 0.5 day of code; worth it before 020/013.
+8. IDEA-031 latent floor: bounds the dynamics headroom on forces; ride-along with 025.
+9. IDEA-022 Depth-Anything-V2 vs elevation.
+10. IDEA-024/028/032: zero-shot read-out. Triggered, but off-objective.
+11. IDEA-019 + IDEA-027. 12. IDEA-020. 13. IDEA-013. 14. IDEA-003. 15. IDEA-008, prior baseline only. 16. IDEA-018 (evidence against). 17. IDEA-021. 18. IDEA-023. 19. IDEA-005 (harmful per SD-VLM). 20. IDEA-033, which depends on IDEA-002.
+- Dropped: IDEA-004 (count perception fine, C-008). IDEA-007 done via IDEA-017 (exp003).
+
 ## Ranking (planner, 2026-10-24, round 3; spec: exp003_exp000_diag_eval)
 Inputs: exp002_zeroshot_qwen3d_rerun draft report (post-review pending), exec.py (current main), configs/sim_diag_*.yaml.
 
@@ -108,7 +155,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 ## IDEA-004 Neutral object references (set-of-marks IDs instead of colour + shape names)
 - source: Slack discussion (semantic vs geometric vs neutral references)
 - change: draw numbered marks on the image; refer to objects as "object 1, 2, ..."
-- status: proposed
+- status: rejected: exp003 shows exp000's perception is not degraded by 4–5 objects (Task A 0.019 vs 0.016, C3 +0.001 [−0.000, 0.003], missing 0.000; C-008). Revisit only for a different model.
 
 ## IDEA-005 Add metric depth as a second image (pseudo-colour)
 - source: Bart, grounding via unprojection
@@ -131,7 +178,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - source: review of exp000_sft_baseline
 - change: first, zero-cost. Stratify existing exp000 val_ood_config results by object count (4 vs 5) and camera-elevation bin. If that is ambiguous, generate three small validation splits from the reserved val seed range, each changing one factor: elevation [12, 25] only, count [4, 5] only, corner cluster / min_gap 0.01 only. Then evaluate exp000 on them (eval_only).
 - discriminates: camera-frame miscalibration vs object-count / format failure vs dense-cluster dynamics as the cause of the config failure.
-- status: proposed
+- status: done: exp003_exp000_diag_eval (step 2, via IDEA-017).
 
 ## IDEA-008 Stratified val_ood_forces analysis + training-prior displacement baseline
 - source: review of exp000_sft_baseline
@@ -404,7 +451,8 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
   - `oracleanchor` vs `static` is dynamics skill with oracle perception. If config ≈ val_id, the config loss lives in perception or its interaction with motion, which favours the geometry levers. If config stays far below val_id, it is a real dynamics loss, which favours IDEA-002.
   - `normal` vs `oracleanchor` is the perception part on the other path. Averaging the two paths gives a Shapley-style share.
 - risk: if Â and B̂ have *inconsistent* perception errors (separate generations), B̂ − Â carries perception noise. Check this with unmoved objects: their implied displacement should be ≈ 0, as exp003's Task B vs own-static unmoved_mean suggests (0.132 vs 0.134 on config).
-- status: proposed
+- note (planner, round 4): results.md unmoved_mean of :oracleanchor ≈ mean ‖B̂_i − Â_i‖ over unmoved objects. That is a pinned-visible upper bound on the inconsistency, used as exp004's gate. The noise biases toward "skill lost", so the gate only conditions that reading.
+- status: planned: exp004_exp000_oracle_anchor (merged with IDEA-035 on the oracle path).
 
 ## IDEA-035 Contact stratification of exp000's dynamics gain: lost skill vs harder multi-body physics (derived)
 - source: review of exp003_exp000_diag_eval
@@ -421,7 +469,11 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
   - Isolated-target K on config ≈ val_id's means the config dynamics loss is contact or multi-body, and IDEA-002 is unlikely to fix it.
   - Isolated K also drops on config means a viewpoint- or layout-conditioned dynamics loss.
 - risk: the isolated fraction may be small on config or corner, which gives wide CIs. Report the fraction first.
-- status: proposed
+- note (planner, round 4):
+  - On the own-static path, perception error shrinks G mechanically (‖e‖ − ‖e − Δ‖ < ‖Δ‖ even when Δ̂ = Δ). Own-path strata would therefore carry the perception artefact into every stratum.
+  - exp004 stratifies the *oracle-anchored* prediction (IDEA-034) instead, with static as filler: `isoanchor` / `contanchor` / `offanchor` vs `static`.
+  - The strata are three: iso; cont (target on the table, a non-target moved > 0.01 m); off (target off the table at t=1). A merge rule applies if n < 30.
+- status: planned: exp004_exp000_oracle_anchor (oracle-path variant).
 
 ## IDEA-036 Two-factor diag split elev × corner on the exp000 adapter (diffuse vs interaction)
 - source: review of exp003_exp000_diag_eval

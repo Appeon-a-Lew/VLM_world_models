@@ -1,0 +1,214 @@
+id: exp004_exp000_oracle_anchor
+# IDEA-034 (oracle-anchored implied displacement) + IDEA-035 (physics-regime strata), run on the
+# oracle-anchored path. Planner round 4, 2026-10-24. Source: exp003 report + review_post (routing
+# amendment 7: cheap discriminators IDEA-034/035 before any 1.4 GPU-h training run on config grounds).
+#
+# Why the strata use the oracle path, not the own-static path IDEA-035 originally proposed:
+# on the own-static path the measured dynamics gain G = ||e - D|| - ||e + (D^ - D)|| is mechanically
+# shrunk by the perception error e even when D^ = D (triangle inequality; e ~ 0.13 m on config vs a
+# target displacement of ~0.24 m). Stratifying that G by contact would mix the perception artefact
+# into every stratum. Re-anchoring on GT t=0 removes the additive offset e, so the strata measure
+# dynamics only. This makes 034 and 035 one read-out (oracle-path dynamics skill, overall and per
+# physics regime) rather than two.
+hypothesis: >
+  exp000 has not lost dynamics skill under the val_ood_config shift. Its config dynamics-gain loss
+  (own-path K 0.424 -> 0.116, exp003) comes from its own perception error and from harder multi-body
+  or off-table episodes, not from worse displacement prediction. Prediction (direction: recovery):
+  on ISOLATED episodes (the target stays on the table and no non-target moves > 0.01 m), the
+  oracle-anchored skill on val_ood_config is at least 0.75x its val_id value
+  (K_iso_cfg >= 0.75 * K_iso_id). Falsified if K_iso_cfg <= 0.5 * K_iso_id, i.e. dynamics skill
+  is lost even on simple single-body pushes once the camera and layout shift.
+change: >
+  none to the model or prompts: eval_only re-run of the exp000 adapter (style center, seed 0), with
+  instrumentation only. physwm/vlm/infer.py writes privileged, diagnostic-only derived pred files
+  (oracleanchor = GT_t0 + (B^ - A^) per object; isoanchor / contanchor / offanchor = oracleanchor on
+  one physics stratum and static elsewhere; ownstatic as in exp003) and one strata stats line per
+  split. center generation and the pred/normal.jsonl records stay byte-identical to main.
+baseline: exp000_sft_baseline
+kind: eval_only
+lora: /var/tmp/toyi/wm/experiments/exp000_sft_baseline/model/adapter
+style: center
+# `none` is mandatory (image_dependence_gap raises on NaN, exec.py:329-334). blank/swap are not needed.
+ablations: [none]
+# exp003 ran the identical generation workload in 0.214 GPU-h; the added work is CPU-side JSON writes.
+budget_hours: 0.75
+seed: 0
+# Do NOT set eval_limit or batch_size: the reproduction check against exp000/exp003 needs the
+# exec defaults (all episodes, batch 32), as in exp003.
+
+budget_note: >
+  Same generation workload as exp003 (7 normal splits + val_id none; 0.214 h actual, 0.55 h worst
+  case in exp003's budget_note). Derived-file writes and the strata pass are ~seconds of CPU.
+  0.75 h gives ~3.5x margin on the observed time. Ledger: ~2.7 of 12 GPU-h used in the last 24 h.
+  If it times out, resubmit at 1.2 h with nothing else changed.
+
+implementation:
+  - >
+    Fresh worktree off current main. exp003's infer.py/derived.py changes were never merged, so
+    start by applying them: `git show 6cec893 -- physwm/vlm/infer.py physwm/vlm/derived.py
+    tests/test_derived.py` (stats lines, task_a_recs, ownstatic). Then make only the changes below to
+    physwm/vlm/infer.py, physwm/vlm/derived.py and tests/test_derived.py, plus this spec.yaml. No change
+    to prompts.py, parse.py, any pinned file (exec.py, metrics.py, baselines.py, schema.py) or
+    pyproject.toml.
+  - >
+    physwm/vlm/derived.py (keep it stdlib only). Add pure functions:
+    (a) oracleanchor_records(a_recs, b_recs, gt0) -> list[dict]. gt0 is {episode_id: {"<obj id>":
+    [x, y, z]}} (camera-frame GT t=0). For every episode with both an A and a B record, emit a Task B
+    record whose objects[k] = gt0[k] + (B[k] - A[k]) element-wise, or None if A[k] or B[k] is None.
+    Use "derived_from": "oracleanchor" and copy parsed = A.parsed and B.parsed, plus image_mode,
+    style and lora.
+    (b) static_records(gt0) -> list[dict]: Task B records with objects = gt0, "derived_from":
+    "gt_t0", parsed True.
+    (c) hybrid_records(primary, filler, keep: set[str]) -> list[dict]: for each episode in filler
+    order, take the primary record if episode_id is in keep, otherwise the filler record. Exactly one
+    record per episode. (A subset-only file would be scored as missing by compare, exec.py:384-390.)
+  - >
+    physwm/vlm/infer.py, strata (normal mode only). Per episode, compute from GT metadata with the
+    pinned helper physwm.eval.metrics.gt_centers_cam (imported, not modified):
+    tgt = ep.action.target; s1 = ep.state_at(1.0);
+    stratum = "off" if not s1[tgt].on_table, else "cont" if any non-target i has
+    ||gt1[i] - gt0[i]|| > metrics.MOVED_THRESH (0.01 m), else "iso";
+    disp = ||gt1[tgt] - gt0[tgt]|| (equal to static's target error, metrics.py:52).
+    After each split's tqdm loop, print one line with a leading newline and flush=True:
+    "[<split>] strata N=<n> iso=<n> cont=<n> off=<n> disp_all=x.xxxx disp_iso=x.xxxx
+    disp_cont=x.xxxx disp_off=x.xxxx" (disp_* = mean target displacement over that stratum, "nan" if
+    empty). Keep gt0 (as {str(i): list}), the stratum per episode, and each Task B record (the same
+    dict as written to normal.jsonl, without "raw") in memory.
+  - >
+    physwm/vlm/infer.py, derived writes. After the split loop, and only if args.image_mode == "normal"
+    and both A and B are in args.tasks, write next to normal.jsonl, one json.dumps per line:
+    ownstatic.jsonl (unchanged from exp003); oracleanchor.jsonl = oracleanchor_records(...);
+    isoanchor.jsonl / contanchor.jsonl / offanchor.jsonl = hybrid_records(oracleanchor, static_records(gt0),
+    keep = episodes in that stratum). All stems are lowercase letters only (compare needs exp_id:[a-z]*,
+    exec.py:374). Nothing derived is ever written to normal.jsonl or none.jsonl, and the none pass
+    writes no derived file and no strata line.
+  - >
+    tests/test_derived.py (the preflight gate, pytest -x tests): keep exp003's ownstatic test, and add:
+    (1) oracleanchor with A = [1,1,1], B = [1.5,1,1], gt0 = [0,0,0] gives [0.5,0,0], and a None slot
+    in A or in B gives None; (2) hybrid_records returns exactly one record per filler episode, the
+    primary record on keep episodes and the filler elsewhere; (3) static_records copies gt0 exactly.
+    Add a small test that the stratum function labels a synthetic episode correctly (off / cont / iso)
+    if it is factored out as a pure function of (gt0, gt1, on_table_t1, target).
+  - >
+    Commit spec + code, run python3 scripts/check_spec.py on the worktree spec, keep the worktree
+    clean, and submit. Pre-review checks: (a) `git diff main...HEAD -- physwm/vlm/infer.py` shows only
+    exp003's hunk plus the strata computation, the strata print, record lists and derived writes; the
+    generation call, max_new and the normal.jsonl json.dumps are untouched; (b) every derived file is
+    written in normal mode only, under the five stems above; (c) results.md will gain rows for
+    :oracleanchor, :isoanchor, :contanchor, :offanchor, :ownstatic on all 7 splits. The primary metric,
+    parse_rate_min and image_dependence_gap read only :normal / :none (exec.py:317-331), so they are
+    unaffected.
+
+# Sources: results.md / metrics.json (agent.sh results), compare (agent.sh compare), and the job.log
+# stats + strata lines (agent.sh log exp004_exp000_oracle_anchor 400). Task B only throughout;
+# `compare --task A ... static` is refused and is not needed. Splits for every compare below unless
+# stated otherwise: S5 = val_id val_ood_config val_diag_elev val_diag_count val_diag_corner.
+# Static target displacement per split, for reference (exp003 review_post 2(d), = static target_mean):
+# id 0.265, elev 0.243, count 0.213, corner 0.315, config 0.241.
+success_criterion:
+  primary_metric: >
+    No change is expected or possible (no model or prompt change), so improvement_threshold (0.005 m)
+    serves as the reproduction tolerance. REPRODUCED if (i) |metrics.json value - 0.3136| <= 0.005;
+    (ii) `compare exp004_exp000_oracle_anchor exp000_sft_baseline --splits val_id val_ood_objects
+    val_ood_forces val_ood_config` gives every |per_split_diff| <= 0.010 (exact 0.0 expected, C-005);
+    (iii) `compare exp004_exp000_oracle_anchor:ownstatic exp003_exp000_diag_eval:ownstatic --splits S5`
+    gives every |per_split_diff| <= 0.010; (iv) image_dependence_gap within 0.331 +/- 0.010.
+    If any fails, the stack drifted: report the run as "exp000 adapter under the current stack", do not
+    mix it with exp003's numbers, and tell the human.
+  objective_link: >
+    This run cannot move the primary metric. Its value is routing. The next 1.4 GPU-h training run is
+    either a geometry lever (IDEA-014/016, on the CI-solid config perception cost of +0.056) or
+    IDEA-002 (displacement output, a dynamics lever). Each outcome below picks one of them, or points
+    the next spec at IDEA-025/026 (forces).
+  if_it_fails: >
+    FALSIFIED (K_iso_cfg <= 0.5 K_iso_id, consistency gate passed): exp000 loses dynamics skill even on
+    single-body pushes once camera and layout shift. The config failure then has a real dynamics part
+    besides the perception cost, and IDEA-002 is promoted to the next training run on config grounds
+    (not only on forces grounds). If the gate fails, the oracle path is contaminated by Task A / Task B
+    perception inconsistency. Then this run says nothing about dynamics, and the next spec is
+    IDEA-025/026.
+
+decision_criteria:
+  validity: >
+    All 7 normal-mode stats lines x 2 tasks, 2 none-mode lines and 7 strata lines are present in
+    job.log. In every strata line iso + cont + off = N, and disp_all equals results.md static
+    target_mean on that split to within 0.001. Otherwise the run is invalid.
+  definitions: >
+    Overall oracle path: Coa = `compare exp004_exp000_oracle_anchor:oracleanchor static --splits S5`.
+    D_oa_s = Coa.per_split_diff[s] and K_oa_s = -D_oa_s / disp_all_s. K_oa_s also equals results.md
+    target_skill of :oracleanchor; quote both, and they must agree to 0.002.
+    Per stratum k in {iso, cont, off}: Ck = `compare exp004_exp000_oracle_anchor:<k>anchor static
+    --splits S5`. Since the filler is static, Ck.per_split_diff[s] = (n_k,s / N_s) * D_k,s, so
+    D_k,s = Ck.per_split_diff[s] * N_s / n_k,s (N_s from Ck.per_split_n, n_k,s from the strata line).
+    K_k,s = -D_k,s / disp_k,s. CI endpoints scale by the same factor.
+    Check: the sum over k of Ck.per_split_diff[s] equals D_oa_s to 1e-6.
+    Merge rule (pre-registered): if n_cont or n_off < 30 on val_id or val_ood_config, merge cont and
+    off into "hard" for all splits (diffs and n add; disp is the n-weighted mean).
+  consistency_gate: >
+    A/B inconsistency (Task A and Task B are separate generations) enters oracleanchor as additive
+    noise. It raises the oracleanchor error and so biases K_oa and K_iso DOWN, i.e. toward
+    FALSIFIED. Upper bound on it: results.md unmoved_mean of :oracleanchor, which is about
+    mean ||B^_i - A^_i|| over unmoved objects (it also contains genuine false-motion errors). GATE
+    PASSED if unmoved_mean(:oracleanchor, val_ood_config) <= 0.05 m. Reference: val_id's value, and
+    exp003's own-perception unmoved error on config of 0.134. The gate only conditions FALSIFIED: a
+    SUPPORTED verdict stands regardless, since the bias works against it.
+  precondition: >
+    n_iso >= 30 on val_id and on val_ood_config, and Ciso.per_split_ci95[val_id] (rescaled) has an
+    upper bound < 0, so isolated-episode skill exists in distribution. If not, no hypothesis verdict
+    is given, and only the overall Q below is reported.
+  hypothesis_verdict: >
+    Ratio rho = K_iso_cfg / K_iso_id. Conservative interval: [K_iso_cfg lo / K_iso_id hi,
+    K_iso_cfg hi / K_iso_id lo], with K endpoints from the rescaled Ciso CI endpoints. Any threshold
+    call whose interval crosses its threshold is flagged "point-estimate only".
+    Check in this order, first match wins:
+    FALSIFIED = rho <= 0.5 and gate passed.
+    SUPPORTED = rho >= 0.75.
+    PARTIALLY SUPPORTED = 0.5 < rho < 0.75.
+    INCONCLUSIVE = rho <= 0.5 with the gate failed, or the precondition failed.
+  routing_readouts: >
+    Reporting and routing only, not the verdict.
+    (a) Overall recovery Q = K_oa_cfg / K_oa_id, compared with the own-path ratio 0.116 / 0.424 = 0.27
+    (exp003). With a conservative interval as above.
+    (b) Composition share Comp = (K_oa_id - K_cfg_comp) / (K_oa_id - K_oa_cfg), where
+    K_cfg_comp = sum_k n_k,cfg * disp_k,cfg * K_k,id / sum_k n_k,cfg * disp_k,cfg is the config skill
+    predicted from config's stratum mix at val_id's per-stratum skill. Comp >= 0.5 means "config has
+    more hard-physics episodes" explains most of the loss. Point estimate only. Report it only if
+    K_oa_id - K_oa_cfg >= 0.05.
+    (c) In-distribution physics difficulty: K_cont_id and K_off_id vs K_iso_id (or K_hard_id after a
+    merge).
+    (d) Second decomposition path for the config shift S_cfg = 0.139 (exp003): the perception part on
+    the oracle path is P_oa = `compare exp004_exp000_oracle_anchor exp004_exp000_oracle_anchor:oracleanchor
+    --splits val_id val_ood_config` (config diff minus val_id diff), and the dynamics part is
+    D_oa_cfg - D_oa_id. Report the Shapley-style average of the two paths with exp003's 0.054 / 0.085.
+    Point estimate only.
+    (e) The same K_k on the three diag splits, especially corner (own-path K 0.237).
+  routing: >
+    R1 SUPPORTED and Q >= 0.75: the config dynamics loss on the own path is the perception offset,
+    and perception is the config lever. The next training run is a geometry lever: IDEA-014 first,
+    because perception degrades on both elev and corner (exp003 P 0.55 / 0.52) while IDEA-016 covers
+    elevation only. IDEA-002 is not promoted on config grounds.
+    R2 SUPPORTED and Q < 0.75 with Comp >= 0.5: skill is intact on simple pushes, and the loss sits
+    in contact / off-table episodes that config has more of. That is harder physics, not lost skill.
+    Use the geometry lever for the perception part. A contact-rich training mix would need a human
+    data config (send to the outbox). IDEA-002 is not promoted on config grounds.
+    R3 FALSIFIED: real viewpoint/layout-conditioned dynamics loss. IDEA-002 becomes the next
+    training run, with config as well as forces as justification. IDEA-014 is runner-up.
+    R4 INCONCLUSIVE or PARTIALLY SUPPORTED: the config route stays open, and the next spec is
+    IDEA-025/026 (forces, 78% of exp000's gain) to decide IDEA-002 on forces grounds.
+
+report_must_quote:
+  - "agent.sh results: metrics.json; results.md rows for :normal, :ownstatic, :oracleanchor and the
+     three stratum files on S5 (Task B), and :oracleanchor target_skill and unmoved_mean on all 7 splits"
+  - "agent.sh log exp004_exp000_oracle_anchor 400: every stats line and every strata line"
+  - "reproduction compares (ii) and (iii) from success_criterion"
+  - "Coa, Ciso, Ccont, Coff (or Chard after a merge) with per_split_diff, per_split_ci95 and
+     per_split_n, plus the D_k / K_k / rho / Q / Comp table computed from them"
+  - "the P_oa compare in (d)"
+  - "the sentence 'privileged diagnostic, uses GT t=0; not a model result' next to every oracleanchor number"
+
+out_of_scope:
+  - "IDEA-025/026 (counterfactual action prompts): a different intervention (input change); separate spec."
+  - "IDEA-031 (latent-property floor): different question; can ride along with 025/026 later."
+  - "Own-path strata (isonormal/contnormal as first written in IDEA-035): contaminated by the
+     perception offset on config (see header); not run."
+  - "IDEA-036 (elev x corner split): needs a human data config (outbox)."
