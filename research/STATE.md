@@ -36,8 +36,14 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - `sim_ood_config` changes 3 factors at once: camera elevation 12–25° (train 30–60°), 4–5 objects (train 1–3), corner cluster. The intrinsics in the prompt are constant across episodes.
 
 ## Queue
-1. exp002_zeroshot_qwen3d_rerun: re-run of the exp001 spec with the harness change actually applied (human directive). Planner drafting, then experimenter prepare → reviewer pre → submit. exp001 is invalid as specified; its C-003 must be withdrawn by the reviewer.
-2. Cheap diagnostics from the exp000 review (IDEA-006/007/008), mostly analysis or tooling, not GPU. IDEA-009 done by human; IDEA-017 unblocked (diag splits exist; exp000 numbers need an eval_only spec with the exp000 adapter).
+1. exp002_zeroshot_qwen3d_rerun: running since 2026-10-24 (commit 9e70064; pre-review APPROVE). It re-runs the exp001 spec with the harness change actually applied. C-003 is withdrawn. Report conditions (review_pre.md):
+   - job.log must show stats lines for all 7 normal splits plus none and swap; otherwise the snapshot didn't run and the result is invalid.
+   - missing_rate pools Task A and Task B.
+   - Label the truncation column as an upper bound.
+   - exp000 has no diag preds.
+   - If the job times out, resubmit at 2.0 h with nothing else changed.
+2. Next after exp002 (planner round 2): IDEA-017 (`exp003_exp000_diag_eval`), then IDEA-025/026, IDEA-006, IDEA-002.
+3. Cheap diagnostics from the exp000 review (IDEA-006/007/008), mostly analysis or tooling, not GPU. IDEA-009 done by human; IDEA-017 unblocked (diag splits exist; exp000 numbers need an eval_only spec with the exp000 adapter).
 
 ## Tooling (human, 2026-10-24)
 - `compare` now reports `per_split_ci95` / `per_split_verdict`, takes `--splits` (any val_* or val_diag_* split), `--task A|B`, and `exp_id:mode` for ablations. Use it for exp001's Task A normal-vs-swap criterion in addition to the fixed 0.05 m margin.
