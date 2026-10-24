@@ -47,3 +47,25 @@ python scripts/viz_episode.py --data $WM/data --split id_test --n 20 --out $WM/v
 - `physwm/eval/`: metrics, baselines (static, constant velocity), table
 - `physwm/vlm/`: prompts and image ablations, answer parser, batched inference, LoRA SFT
 - `configs/`: simulation splits and SFT hyper-parameters
+
+## Autonomous research loop
+- **Policy:** `configs/research_agent_policy.yaml`
+- **Agent instructions:** `research/LOOP.md`
+- **State and leaderboard:** `research/STATE.md`
+- **Experiment specs and reports:** `research/experiments/<id>/`
+
+| piece | role |
+|---|---|
+| `scripts/agent.sh` | the agent's only route to the GPU box: `status`, `submit`, `results`, `log`, `cancel`, `gen`, `final-eval` |
+| `physwm/agent/exec.py` | runs on the box from the pinned main code. Checks the spec, budget, GPU availability, protected splits and seed ranges; runs preflight tests; trains/infers from the experiment's commit snapshot; scores with the pinned eval code on `val_*` |
+| `manifests/final_test.json` | hashes of the frozen final test (`id_test`, `ood_*`) |
+| `scripts/approve.sh <exp>` | **human only**: allows exactly one final-test evaluation of one commit |
+| `research/agent_settings.json` | Claude Code permission rules for the loop session: no raw ssh/rsync, no edits to eval/policy/manifests/main code |
+
+**Start:** `scripts/start_loop.sh`. This opens tmux plus Remote Control, and the loop runs `/loop Follow research/LOOP.md`.
+
+**Human chores:**
+- After changing `main` code: run `scripts/sync.sh`, then on the box `python -m physwm.agent.exec pin`.
+- After 3 consecutive failures, review them, then run `python -m physwm.agent.exec reset-failures`.
+
+These are guardrails, not a sandbox. Jobs run as the same unix user that owns the data.
