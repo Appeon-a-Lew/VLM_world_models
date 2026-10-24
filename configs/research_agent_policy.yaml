@@ -44,7 +44,7 @@ data:
   validation_splits: [val_id, val_ood_objects, val_ood_forces, val_ood_config]
   ablation_split: val_id            # image-dependence test runs here
   agent_split_prefixes: [train, val, dev]   # names the agent may generate
-  reserved_seed_ranges: [[1000000, 5000000]] # protected test seeds; never regenerate
+  reserved_seed_ranges: [[1000000, 9000000]] # final-test (1M-5M) + validation (5M-9M) seeds
 
 evaluation:
   # fixed by policy -- an experiment cannot change these
