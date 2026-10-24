@@ -17,4 +17,8 @@ gen configs/sim_train.yaml       val_id          5000000  500
 gen configs/sim_ood_objects.yaml val_ood_objects 6000000  500
 gen configs/sim_ood_forces.yaml  val_ood_forces  7000000  500
 gen configs/sim_ood_config.yaml  val_ood_config  8000000  500
+# single-factor diagnostic validation splits (policy data.diagnostic_splits), one ood_config factor each
+gen configs/sim_diag_elev.yaml   val_diag_elev   8500000  300
+gen configs/sim_diag_count.yaml  val_diag_count  8600000  300
+gen configs/sim_diag_corner.yaml val_diag_corner 8700000  300
 du -sh "$OUT"/*

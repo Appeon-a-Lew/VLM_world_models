@@ -33,7 +33,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 15. IDEA-018 ViT LoRA: limits_of_finetuning adapted the ViT and still failed under visual shift; direction uncertain. Cost: 1.5 GPU-h.
 16. IDEA-021 camera FiLM gate: conditional on a partial gain from 016.
 17. IDEA-005 depth as a second image: SD-VLM found it hurt (22.64 vs 46.73). Deprioritised.
-- IDEA-017: needs-human (reason updated below). Ask the human now, in parallel, because #3 is likely to be ambiguous.
+- IDEA-017: unblocked by the human (2026-10-24); the diagnostic splits exist. See its status below.
 - IDEA-001: planned: exp001_zeroshot_qwen3d (in pre-review, untouched).
 
 ## IDEA-001 Zero-shot with the native 3D-grounding prompt
@@ -86,7 +86,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: tooling. Report a CI per val split and for the val_id ablation diffs, not only for the aggregate primary metric.
 - discriminates: whether split-level statements (e.g. config +0.028) are outside the noise. Needed before any per-split claim can become solid.
 - note (planner, 2026-10-24): `compare` lives in pinned `physwm/agent/exec.py`, so the proper fix needs a human edit plus a re-pin. Interim: an unpinned per-split bootstrap printed to job.log by the diagnostic eval job (see Ranking #4).
-- status: needs-human: per-split CIs in `compare` require editing pinned physwm/agent/exec.py
+- status: done (human, 2026-10-24). `compare` on main now reports `per_split_ci95` / `per_split_verdict`, takes `--splits` (any val_* or val_diag_* split), `--task A|B`, and `exp_id:mode` for ablation runs. The interim unpinned bootstrap is no longer needed.
 
 ## IDEA-013 Per-patch camera-frame xyz embedding from depth (OneCanvas-style, single view)
 - source: research/literature/2026_onecanvas.md
@@ -123,7 +123,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - expected: attributes the Task A 0.016 → 0.136 m jump to the camera vs count/clutter, which decides between the geometry fixes (013/014/016) and a clutter/binding fix
 - cost: sim generation plus about 0.2 GPU h eval
 - note (planner, 2026-10-24): seeds are not actually the blocker. `op_gen` accepts `dev_*` splits with seeds outside [1M, 9M), e.g. ≥ 9,000,000 (exec.py:417-428). The real blockers: (1) `op_gen` only takes configs from main's `configs/`, so three new single-factor sim configs must land on main; (2) pinned `evaluate_experiment` loads only `validation_splits` episodes (exec.py:295-296), so predictions on `dev_*` splits would be silently skipped. Scoring them needs a pinned change, or unpinned scoring in worktree code, which a human should approve.
-- status: needs-human: new sim configs on main plus scoring of non-validation splits (pinned exec.py)
+- status: unblocked (human, 2026-10-24). Splits `val_diag_elev` (elevation 12–25° only), `val_diag_count` (4–5 objects only) and `val_diag_corner` (corner cluster with min_gap 0.01 only), 300 episodes each, configs `configs/sim_diag_*.yaml`, policy `data.diagnostic_splits`. Every job now runs inference on them and lists them in results.md (not in the primary metric); `compare --splits` gives CIs. To get exp000 numbers, plan an eval_only spec with `lora: /var/tmp/toyi/wm/experiments/exp000_sft_baseline/model/adapter`.
 
 ## IDEA-018 LoRA on the vision encoder too
 - source: research/literature/2025_limits_of_finetuning.md
@@ -159,4 +159,4 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: flat error across elevation while exp000 Task A jumps 0.016 → 0.136 m means the failure sits in the VLM's learned pixel→metric map, and an RGB-only geometry-encoder route (predicted-depth input for IDEA-020/013) is viable. If the geometry models also degrade at 12–25° or with 4–5 objects, the low-elevation, cluttered views are intrinsically harder and part of the config gap is not attributable to SFT.
 - cost: about 0.5 day, under 0.2 GPU h
 - note (planner, 2026-10-24): the job runner launches only `physwm.vlm.sft` / `physwm.vlm.infer`, so this has to run inside worktree infer.py. VGGT most likely needs a new pip package (not allowed). Check whether Depth-Anything-V2 loads through the existing transformers install before planning, and do only that half unless a human approves VGGT.
-- status: proposed (VGGT half: needs-human, dependency)
+- status: proposed, Depth-Anything-V2 half only. Human, 2026-10-24: VGGT half dropped, no new dependencies. Depth-Anything-V2 is allowed only if it runs with the current install.

@@ -1,0 +1,5 @@
+# Diagnostic (validation only): the object-count factor of ood_config alone (training spacing and region).
+base: sim_train.yaml
+name: diag_count
+objects:
+  count: [4, 5]

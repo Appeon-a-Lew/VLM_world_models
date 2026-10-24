@@ -7,7 +7,8 @@
 #   scripts/agent.sh results <exp_id>
 #   scripts/agent.sh log <exp_id> [n]
 #   scripts/agent.sh cancel <exp_id>
-#   scripts/agent.sh compare <a> <b>             # paired bootstrap on the primary metric (exp ids or static)
+#   scripts/agent.sh compare <a> <b> [--splits s ...] [--task A|B]   # paired bootstrap, aggregate + per split;
+#                                                default: primary metric. a/b: static | exp_id | exp_id:image_mode
 #   scripts/agent.sh gen <config> <split> <seed_start> <n>
 #   scripts/agent.sh final-eval <exp_id>         # refused without a human approval token
 set -euo pipefail
@@ -35,8 +36,8 @@ case "$op" in
   results) id_ok "$1"; remote results --exp "$1" ;;
   log) id_ok "$1"; remote log --exp "$1" --n "${2:-40}" ;;
   cancel) id_ok "$1"; remote cancel --exp "$1" ;;
-  compare) remote compare --a "$1" --b "$2" ;;
+  compare) a=$1 b=$2; shift 2; remote compare --a "$a" --b "$b" "$@" ;;
   gen) remote gen --config "$1" --split "$2" --seed-start "$3" --n "$4" ;;
   final-eval) id_ok "$1"; remote final-eval --exp "$1" ;;
-  *) sed -n '2,13p' "$0"; exit 2 ;;
+  *) sed -n '2,14p' "$0"; exit 2 ;;
 esac

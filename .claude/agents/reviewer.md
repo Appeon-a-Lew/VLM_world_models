@@ -25,9 +25,14 @@ Read `scripts/agent.sh results <exp_id>` and the draft `report.md`, then run the
 - `scripts/agent.sh compare <exp_id> <baseline>`
 - `scripts/agent.sh compare <exp_id> static`
 
+`compare` reports a CI and a verdict for each split (`per_split_ci95`, `per_split_verdict`) as well as for the aggregate. Optional arguments come after a and b:
+- `--splits <s> ...` picks any validation or diagnostic split. The diagnostic splits are `val_diag_elev`, `val_diag_count` and `val_diag_corner`; each changes one factor of `val_ood_config`.
+- `--task A` compares perception (mean over all objects) instead of the Task B target.
+- `<exp_id>:<mode>` selects an ablation run. Example: `compare <exp_id>:none <exp_id>:normal --splits val_id` gives the image-dependence gap with a CI.
+
 Check each of the following:
 - Does the CI support the report's verdict? A small difference inside the CI is "inconclusive", even when the point estimate moved.
-- Per-split diffs: is the gain driven by one split, e.g. only `ood_forces`?
+- Per-split diffs: is the gain driven by one split, e.g. only `ood_forces`? A per-split claim needs that split's CI.
 - Parse rates: did they change? A parse-rate change can masquerade as an accuracy change.
 - Image-dependence gap: did the model get better while relying *less* on the image? That is a red flag for shortcut learning.
 - Alternative explanations: list at least 2, plus the cheapest experiment that would discriminate between them. Add those experiments to `research/ideas/BACKLOG.md` with `source: review of <exp_id>`.

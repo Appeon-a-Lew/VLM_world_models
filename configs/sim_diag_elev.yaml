@@ -1,0 +1,5 @@
+# Diagnostic (validation only): the camera-elevation factor of ood_config alone.
+base: sim_train.yaml
+name: diag_elev
+camera:
+  elevation: [12, 25]

@@ -42,6 +42,8 @@ PINNED_FILES = [
 ]
 EXP_ID = re.compile(r"^exp\d{3}_[a-z0-9_]{1,48}$")
 SPLIT_NAME = re.compile(r"^[a-z0-9_]{1,40}$")
+BASELINE_NAMES = ("static", "const_velocity")
+DIAG_SPLITS = POLICY["data"].get("diagnostic_splits", [])
 
 
 class Denied(Exception):
@@ -262,8 +264,8 @@ def op_job(args) -> None:
         infer += ["--lora", lora] if lora else []
         infer += ["--limit", str(spec["eval_limit"])] if spec.get("eval_limit") else []
         pred = exp_dir / "pred"
-        _run(infer + ["--splits", *POLICY["data"]["validation_splits"], "--out", str(pred / "normal.jsonl")],
-             env_code, deadline, log)
+        _run(infer + ["--splits", *POLICY["data"]["validation_splits"], *DIAG_SPLITS,
+                      "--out", str(pred / "normal.jsonl")], env_code, deadline, log)
         for mode in spec.get("ablations", ["none"]):
             _run(infer + ["--splits", POLICY["data"]["ablation_split"], "--image-mode", mode,
                           "--out", str(pred / f"{mode}.jsonl")], env_code, deadline, log)
@@ -292,8 +294,9 @@ def evaluate_experiment(exp: str, splits_key: str = "validation_splits", tag: st
 
     check_pinned()
     exp_dir = EXPS / exp
-    splits = POLICY["data"][splits_key]
-    episodes = {ep.episode_id: ep for s in splits for _, ep in load_split(DATA, s)}
+    splits = POLICY["data"][splits_key]  # the metrics below use these only
+    shown = splits + (DIAG_SPLITS if splits_key == "validation_splits" else [])
+    episodes = {ep.episode_id: ep for s in shown for _, ep in load_split(DATA, s)}
     base_dir = AGENT / ("val_baselines" if splits_key == "validation_splits" else "final_baselines")
     preds = {"static": base_dir / "static.jsonl", "const_velocity": base_dir / "const_velocity.jsonl"}
     for f in sorted((exp_dir / f"pred{tag}").glob("*.jsonl")):
@@ -318,7 +321,7 @@ def evaluate_experiment(exp: str, splits_key: str = "validation_splits", tag: st
         f"{id_split}_target_mean": get(me, id_split, "B", "target_mean"),
         f"{id_split}_all_mean": get(me, id_split, "B", "all_mean"),
         f"taskA_{id_split}_all_mean": get(me, id_split, "A", "all_mean"),
-        "parse_rate_min": min(r["parse_rate"] for r in rows if r["method"] == me),
+        "parse_rate_min": min(r["parse_rate"] for r in rows if r["method"] == me and r["split"] in splits),
         "static_ood_target_mean": float(np.mean([get("static", s, "B", "target_mean") for s in ood])),
     }
     if not tag:
@@ -354,54 +357,85 @@ def op_log(args) -> None:
             print(f"## {f}\n" + "\n".join(lines[-args.n:]))
 
 
-def _target_errors(method: str, splits: list[str]) -> dict[str, dict[str, float]]:
-    """split -> {episode_id: Task B target error} for an experiment id or a val baseline name."""
+def _episode_errors(method: str, splits: list[str], task: str) -> dict[str, dict[str, float]]:
+    """split -> {episode_id: error} for `exp_id[:image_mode]` or a val baseline name.
+    Task B: the pushed object's error; Task A: mean over all objects. Missing predictions score as
+    unparsed (worst case), but a split with no predictions at all is refused."""
+    import numpy as np
+
     from physwm.eval.metrics import load_predictions, per_object_rows
     from physwm.schema import load_split
 
-    path = (AGENT / "val_baselines" / f"{method}.jsonl" if method in ("static", "const_velocity")
-            else EXPS / method / "pred" / "normal.jsonl")
+    exp, _, mode = method.partition(":")
+    if exp in BASELINE_NAMES and not mode:
+        path = AGENT / "val_baselines" / f"{exp}.jsonl"
+    elif EXP_ID.match(exp) and re.fullmatch(r"[a-z]*", mode):
+        path = EXPS / exp / "pred" / f"{mode or 'normal'}.jsonl"
+    else:
+        raise Denied(f"method must be static, const_velocity or exp_id[:image_mode], got {method!r}")
     if not path.exists():
         raise Denied(f"no validation predictions for {method}")
-    preds = {p["episode_id"]: p for p in load_predictions(path) if p["task"] == "B"}
+    preds = {p["episode_id"]: p for p in load_predictions(path) if p["task"] == task}
     out = {}
     for s in splits:
+        eps = [ep for _, ep in load_split(DATA, s)]
+        if not any(ep.episode_id in preds for ep in eps):
+            raise Denied(f"{method} has no Task {task} predictions on {s}")
         out[s] = {}
-        for _, ep in load_split(DATA, s):
-            p = preds.get(ep.episode_id, {"task": "B", "objects": {}})
-            out[s][ep.episode_id] = next(r["err"] for r in per_object_rows(p, ep) if r["target"])
+        for ep in eps:
+            rows = per_object_rows(preds.get(ep.episode_id, {"task": task, "objects": {}}), ep)
+            out[s][ep.episode_id] = (next(r["err"] for r in rows if r["target"]) if task == "B"
+                                     else float(np.mean([r["err"] for r in rows])))
     return out
 
 
 def op_compare(args) -> None:
-    """Paired bootstrap of the primary metric (val OOD, Task B target mean) between two methods.
-    diff = a - b; negative means `a` is better."""
+    """Paired bootstrap between two methods, on the aggregate (mean over splits) and per split.
+    Default: the primary metric (val OOD, Task B target mean). diff = a - b; negative means `a` is better."""
     import numpy as np
 
-    ood = [s for s in POLICY["data"]["validation_splits"] if "ood" in s]
-    ea, eb = _target_errors(args.a, ood), _target_errors(args.b, ood)
+    allowed = POLICY["data"]["validation_splits"] + DIAG_SPLITS
+    splits = args.splits or [s for s in POLICY["data"]["validation_splits"] if "ood" in s]
+    bad = [s for s in splits if s not in allowed]
+    if bad:
+        raise Denied(f"compare runs on validation / diagnostic splits only {allowed}, got {bad}")
+    ea, eb = _episode_errors(args.a, splits, args.task), _episode_errors(args.b, splits, args.task)
     rng = np.random.default_rng(0)
     per_split = {s: (np.array([ea[s][k] for k in sorted(ea[s])]), np.array([eb[s][k] for k in sorted(ea[s])]))
-                 for s in ood}
-    point = float(np.mean([a.mean() - b.mean() for a, b in per_split.values()]))
-    boots = []
+                 for s in splits}
+    diffs = {s: float(a.mean() - b.mean()) for s, (a, b) in per_split.items()}
+    point = float(np.mean(list(diffs.values())))
+    boots, split_boots = [], {s: [] for s in splits}
     for _ in range(args.n_boot):
         d = []
-        for a, b in per_split.values():
+        for s, (a, b) in per_split.items():
             idx = rng.integers(0, len(a), len(a))
             d.append(a[idx].mean() - b[idx].mean())
+            split_boots[s].append(d[-1])
         boots.append(np.mean(d))
-    lo, hi = np.percentile(boots, [2.5, 97.5])
     thr = POLICY["evaluation"]["improvement_threshold"]
-    verdict = ("a better" if hi < 0 and point < -thr else
-               "b better" if lo > 0 and point > thr else "comparable / not significant")
+
+    def verdict(point, lo, hi):
+        return ("a better" if hi < 0 and point < -thr else
+                "b better" if lo > 0 and point > thr else "comparable / not significant")
+
+    def ci(b):
+        return [float(x) for x in np.percentile(b, [2.5, 97.5])]
+
+    lo, hi = ci(boots)
+    default = args.task == "B" and not args.splits
     print(json.dumps({
-        "metric": POLICY["evaluation"]["primary_metric"], "a": args.a, "b": args.b,
+        "metric": POLICY["evaluation"]["primary_metric"] if default
+        else f"task{args.task}_{'target' if args.task == 'B' else 'all'}_mean over {splits}",
+        "a": args.a, "b": args.b,
         "a_value": float(np.mean([a.mean() for a, _ in per_split.values()])),
         "b_value": float(np.mean([b.mean() for _, b in per_split.values()])),
-        "diff_a_minus_b": point, "ci95": [float(lo), float(hi)],
-        "per_split_diff": {s: float(a.mean() - b.mean()) for s, (a, b) in per_split.items()},
-        "improvement_threshold": thr, "verdict": verdict,
+        "diff_a_minus_b": point, "ci95": [lo, hi],
+        "per_split_diff": diffs,
+        "per_split_ci95": {s: ci(b) for s, b in split_boots.items()},
+        "per_split_verdict": {s: verdict(diffs[s], *ci(b)) for s, b in split_boots.items()},
+        "per_split_n": {s: len(a) for s, (a, _) in per_split.items()},
+        "improvement_threshold": thr, "verdict": verdict(point, lo, hi),
     }, indent=1))
 
 
@@ -418,7 +452,7 @@ def op_gen(args) -> None:
     d = POLICY["data"]
     if not SPLIT_NAME.match(args.split) or not any(args.split.startswith(p) for p in d["agent_split_prefixes"]):
         raise Denied(f"split name must start with one of {d['agent_split_prefixes']}")
-    if args.split in d["protected_splits"] or args.split in d["validation_splits"]:
+    if args.split in d["protected_splits"] + d["validation_splits"] + DIAG_SPLITS:
         raise Denied("protected / validation splits are fixed")
     if (DATA / args.split).exists():
         raise Denied(f"split {args.split} exists; datasets are immutable once generated")
@@ -479,7 +513,7 @@ def op_pin(args) -> None:
         out = AGENT / sub
         out.mkdir(parents=True, exist_ok=True)
         files = {n: open(out / f"{n}.jsonl", "w") for n in B.BASELINES}
-        for split in POLICY["data"][key]:
+        for split in POLICY["data"][key] + (DIAG_SPLITS if key == "validation_splits" else []):
             for ep_dir, ep in load_split(DATA, split):
                 for n, fn in B.BASELINES.items():
                     c = fn(ep, ep_dir)
@@ -515,6 +549,8 @@ def main():
     p.add_argument("--a", required=True)
     p.add_argument("--b", required=True)
     p.add_argument("--n-boot", type=int, default=2000)
+    p.add_argument("--splits", nargs="+")
+    p.add_argument("--task", choices=["A", "B"], default="B")
     p = sub.add_parser("gen")
     p.add_argument("--config", required=True)
     p.add_argument("--split", required=True)
