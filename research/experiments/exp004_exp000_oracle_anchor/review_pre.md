@@ -1,6 +1,12 @@
 # Pre-review: exp004_exp000_oracle_anchor
 
-Verdict: **REVISE** (spec text only; the code is fine to run as is)
+## Round 2 verdict: **APPROVE** (reviewer's verdict, transcribed by the orchestrator because the reviewer's write was blocked)
+- Worktree spec.yaml is byte-identical to main's at 58c848f (`cmp`); main is an ancestor of the worktree HEAD (merge 3090867); tree clean.
+- Round-1 fixes 1-5 resolved: criteria re-anchored on exp005 (0.3160 ±0.005, compare vs exp005 exact 0.0 over 8 splits, gap 0.3425 ±0.005); exp003 numbers marked as exp000 references, exp005 K_own/C3/G to be computed from `ownstatic` before oracle outcomes are read; 8 splits and 8 strata lines; key-match assertion plus test in 6052307; main merged.
+- No new confound: the only change is an assertion in the post-generation derived path.
+- Residual risk, not blocking: `gt0` keys are `str(range(n))` and parser keys are `str(o.id)`. Non-contiguous object ids would fire the assertion after inference (GPU time lost, no silent wrong result). A crash there means a key mismatch, not drift.
+
+## Round 1 verdict (superseded): **REVISE** (spec text only; the code was fine to run as is)
 
 ## Code check (cherry-pick 56a3432 from c2e2605)
 `git diff main...HEAD` touches only physwm/vlm/derived.py, physwm/vlm/infer.py and tests/test_derived.py (+187 lines). The plain `git diff main` also shows deletions of exp005 report/review/CLAIMS/BACKLOG. That is only because the worktree branch is behind main. Rebase or merge main before the final commit so the committed branch carries no stale state. The code diff is unaffected.
