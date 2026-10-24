@@ -1,2 +1,3 @@
 2026-10-24 exp000_sft_baseline done 1.372 GPU-h | primary val_ood_target_mean 0.3136 (static 0.3790, diff -0.0654 CI [-0.0754,-0.0557]) | image gap 0.331 | parse 1.000 | verdict: reference baseline; reviewer AMEND adopted
 2026-10-24 exp001_zeroshot_qwen3d submitted | commit 0776d91 | eval_only, style qwen3d, ablations [none, swap], budget 1.5 h | pre-review REVISE → APPROVE (round 2)
+2026-10-24 exp001_zeroshot_qwen3d done 0.351 GPU-h | primary val_ood_target_mean 0.7554 (static 0.3790, diff +0.3764 CI [0.3578,0.3964]) | image gap 0.400 (artefact, none parse 0) | parse min 0.996 | verdict: (B) supported pipeline-level, (A) rejected (swap−normal TaskA −0.051 CI [−0.074,−0.028]); provisional, missing_rate not visible in log; reviewer AMEND adopted

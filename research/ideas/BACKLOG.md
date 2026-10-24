@@ -39,7 +39,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 ## IDEA-001 Zero-shot with the native 3D-grounding prompt
 - source: Phase 1 smoke test (the `center` prompt yields `[0,0,0]`)
 - change: no training; `style: qwen3d`
-- status: planned: exp001_zeroshot_qwen3d
+- status: done: exp001_zeroshot_qwen3d (2026-10-24). (B) worse than static, supported at pipeline level, CI [0.358, 0.396]. (A) rejected at harness level: swap beats normal on Task A val_id (−0.051, CI [−0.074, −0.028]). Both provisional until the per-split missing rates are recovered (outbox/exp001_joblog_missing_rate.md). Follow-ups: IDEA-028, IDEA-024, IDEA-023.
 
 ## IDEA-002 Predict the displacement instead of the absolute future position
 - source: Phase 1 design. Absolute targets mix perception error and dynamics error.
@@ -176,6 +176,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: analysis of exp001 val_id Task A outputs, no GPU. (i) Project the predicted and GT centres with K and report the pixel error separately from the depth (z) error. (ii) Fit one global depth scale s (z_gt ≈ s·z_pred) and per-axis sign/scale, then report the error after correction.
 - discriminates: s ≈ 1.07 with a large error drop points to a Cube R-CNN/Omni3D virtual-depth convention (f_v = H_v = 512 vs our f/H ≈ 1.072), which is fixable post hoc. A small pixel error with a large z error means metric depth fails (→ IDEA-014/015). A large pixel error means poor 2D grounding of small primitives (→ IDEA-004). A sign flip on an axis would mean a frame-convention bug, although the cookbook projection says Qwen uses the same OpenCV frame as us.
 - cost: about 0.5 day, no GPU. Needs the exp001 pred file; if `agent.sh` cannot read it, run it as a read-out inside a worktree eval job.
+- note (review of exp001_zeroshot_qwen3d): priority up. On val_id, swap scores *better* than normal (Task A −0.051 m, CI [−0.074, −0.028]). An axis sign flip or offset is the one simple mechanism under which image-driven predictions lose to wrong-image predictions. Run (i)-(ii) together with IDEA-028 in the same read-out.
 - refinement (researcher, 2026-10-24, research/literature/2023_omni3d_cube_rcnn.md): Cube R-CNN-style virtual depth (f_v = H_v) amounts to a virtual camera whose focal is H in original pixels. Under it, X_v = X and Y_v = Y, and only z is rescaled: z_v = z·H/f. For our K (fy ≈ 480.4, H = 448) the virtual-camera hypothesis therefore predicts z_gt ≈ 1.072·z_pred with **x and y scales ≈ 1**, a fitted uniform xyz scale would point to something else. A test with no fitting: project the predictions with K_v (fx = fy = 448, cx = cy = 224) and with our K. Under the hypothesis, K_v gives the lower pixel error, and with our K the pixels are over-scaled radially by ~1.072 about (224, 224). Decision rule: report raw outputs as the exp001 primary. Report the z×1.072 variant only as a labelled post-hoc diagnostic, and only if both tests agree. The bias is ≤ ~0.09 m at our depths, so it cannot explain a ~0.7 m error. It does not apply to SFT models (constant K is absorbed).
 - status: proposed
 
@@ -200,3 +201,25 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: worktree infer option (crop + K rewrite), about 0.1 GPU h. Zoom-out (c > 1) would need re-rendering with a different fovy (op_gen config, human), so only zoom-in is proposed.
 - priority note: K is fixed in every val split including val_ood_config, so this does not bear on the primary metric. Run it only together with, or just before, IDEA-019.
 - status: proposed
+
+## IDEA-028 Read-out of exp001 predictions: why swap beats normal, and what fills val_ood_config (diagnostic)
+- source: review of exp001_zeroshot_qwen3d
+- change: eval-only read-out of the existing `pred/normal.jsonl` and `pred/swap.jsonl`, with no new generation. Run it as a worktree infer.py option that reads the pred files and prints to job.log. Use a fresh output line, not one after tqdm (see IDEA-029). Per mode × task × split, report:
+  - (a) missing_rate, and the unmatched-label rate (raw labels that `_norm` maps to no prompt name), with the 10 most frequent unmatched labels
+  - (b) Task A error restricted to objects matched in *both* normal and swap
+  - (c) per-axis Pearson r(pred, GT) and std(pred), camera frame
+  - (d) a constant-centre prior: the mean GT camera-frame centre of `train` Task A, written as a derived `pred/const_prior.jsonl` so that pinned code scores it
+  - (e) for val_ood_config, the histogram of number of objects returned per answer, and the hit-cap count (len == max_new)
+- discriminates:
+  - Label/format: swap has the lower missing or unmatched rate, and on matched-in-both objects normal ≤ swap.
+  - Frame-convention error: r < 0 on some axis under normal (joint with IDEA-024).
+  - Variance shrinkage: r ≈ 0+, std(normal) > std(swap), and the constant prior beats normal.
+  - For config, (e) separates omission (few objects per answer) from truncation (hit-cap) from label mismatch (a).
+- cost: < 0.05 GPU h (model load not needed); about 0.5 day of code
+- status: proposed
+
+## IDEA-029 Fix `op_log` dropping stdout lines that share a physical line with a tqdm frame (tooling)
+- source: review of exp001_zeroshot_qwen3d
+- change: in pinned `physwm/agent/exec.py:356`, apply the tqdm filter to the segment after the last `\r`, not to the whole line. Alternatively, surface missing_rate in results.md (exp000 review item). Interim worktree workaround: print `"\n"` before every stats line.
+- discriminates: n/a. Without this fix, every pre-review logging requirement routed through job.log is unverifiable, and exp001's validity gate failed to be checkable for exactly this reason.
+- status: needs-human (pinned file)
