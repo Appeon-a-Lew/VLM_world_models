@@ -28,8 +28,8 @@ baseline: exp000_sft_baseline
 kind: eval_only
 # DEPENDENCY: the exp000 adapter was lost with the old box. This is the exp005_exp000_repro adapter
 # (exp000 re-trained unchanged). exp004 must not be submitted until exp005 is done and its adapter
-# path is confirmed from exp005's job.log. Reproduction targets below are exp000's recorded numbers;
-# if exp005 drifted from exp000, re-anchor (ii)/(iii) on exp005 and exp005:ownstatic-free numbers.
+# path is confirmed from exp005's job.log. Reproduction targets below are anchored on exp005 (the
+# adapter actually evaluated), numbers from exp005 report.md. exp000/exp003 numbers are references only.
 lora: /var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter
 style: center
 # `none` is mandatory (image_dependence_gap raises on NaN, exec.py:329-334). blank/swap are not needed.
@@ -41,7 +41,9 @@ seed: 0
 # exec defaults (all episodes, batch 32), as in exp003.
 
 budget_note: >
-  Same generation workload as exp003 (7 normal splits + val_id none; 0.214 h actual, 0.55 h worst
+  Same generation workload as exp003 (exp003 had 7 normal splits; now 8 = val_id, val_ood_objects,
+  val_ood_forces, val_ood_config + 4 diag incl. val_diag_elev_corner, per validation_splits +
+  diagnostic_splits in configs/research_agent_policy.yaml and exec.py:269; plus val_id none; 0.214 h actual, 0.55 h worst
   case in exp003's budget_note). Derived-file writes and the strata pass are ~seconds of CPU.
   0.75 h gives ~3.5x margin on the observed time. Ledger: ~2.7 of 12 GPU-h used in the last 24 h.
   If it times out, resubmit at 1.2 h with nothing else changed.
@@ -99,7 +101,7 @@ implementation:
     exp003's hunk plus the strata computation, the strata print, record lists and derived writes; the
     generation call, max_new and the normal.jsonl json.dumps are untouched; (b) every derived file is
     written in normal mode only, under the five stems above; (c) results.md will gain rows for
-    :oracleanchor, :isoanchor, :contanchor, :offanchor, :ownstatic on all 7 splits. The primary metric,
+    :oracleanchor, :isoanchor, :contanchor, :offanchor, :ownstatic on all 8 splits. The primary metric,
     parse_rate_min and image_dependence_gap read only :normal / :none (exec.py:317-331), so they are
     unaffected.
 
@@ -112,13 +114,17 @@ implementation:
 success_criterion:
   primary_metric: >
     No change is expected or possible (no model or prompt change), so improvement_threshold (0.005 m)
-    serves as the reproduction tolerance. REPRODUCED if (i) |metrics.json value - 0.3136| <= 0.005;
-    (ii) `compare exp004_exp000_oracle_anchor exp000_sft_baseline --splits val_id val_ood_objects
-    val_ood_forces val_ood_config` gives every |per_split_diff| <= 0.010 (exact 0.0 expected, C-005);
-    (iii) `compare exp004_exp000_oracle_anchor:ownstatic exp003_exp000_diag_eval:ownstatic --splits S5`
-    gives every |per_split_diff| <= 0.010; (iv) image_dependence_gap within 0.331 +/- 0.010.
-    If any fails, the stack drifted: report the run as "exp000 adapter under the current stack", do not
-    mix it with exp003's numbers, and tell the human.
+    serves as the reproduction tolerance. Anchored on exp005_exp000_repro (same adapter; exp005 report.md).
+    REPRODUCED if (i) |metrics.json value - 0.3160| <= 0.005 (exp000 reference 0.3136, not used);
+    (ii) `compare exp004_exp000_oracle_anchor exp005_exp000_repro --splits val_id val_ood_objects
+    val_ood_forces val_ood_config val_diag_elev val_diag_count val_diag_corner val_diag_elev_corner`
+    gives every per_split_diff exactly 0.0 expected (eval-only on a fixed adapter, C-005), tolerance 0.001;
+    (iii) the exp003 ownstatic comparison is dropped (different adapter). Replaced by: Task A all_mean
+    in results.md for :normal on each split within 0.001 of exp005 (val_id 0.0152, objects 0.023,
+    forces 0.016, config 0.137, diag count 0.021, elev 0.084, corner 0.079, elev_corner 0.122);
+    (iv) image_dependence_gap = 0.3425 +/- 0.005 (exp005; exp000 reference 0.331).
+    If any fails, the stack drifted: report the run as "exp005 adapter under the current stack",
+    do not mix it with exp003's numbers, and tell the human.
   objective_link: >
     This run cannot move the primary metric. Its value is routing. The next 1.4 GPU-h training run is
     either a geometry lever (IDEA-014/016, on the CI-solid config perception cost of +0.056) or
@@ -134,8 +140,10 @@ success_criterion:
 
 decision_criteria:
   validity: >
-    All 7 normal-mode stats lines x 2 tasks, 2 none-mode lines and 7 strata lines are present in
-    job.log. In every strata line iso + cont + off = N, and disp_all equals results.md static
+    All 8 normal-mode splits (val_id, val_ood_objects, val_ood_forces, val_ood_config, val_diag_elev,
+    val_diag_count, val_diag_corner, val_diag_elev_corner) have stats lines x 2 tasks, 2 none-mode
+    lines are present, and 8 strata lines are present in job.log (val_diag_elev_corner is outside
+    S5 but still gets strata and derived files; it is reported as an extra split). In every strata line iso + cont + off = N, and disp_all equals results.md static
     target_mean on that split to within 0.001. Otherwise the run is invalid.
   definitions: >
     Overall oracle path: Coa = `compare exp004_exp000_oracle_anchor:oracleanchor static --splits S5`.
@@ -154,7 +162,9 @@ decision_criteria:
     FALSIFIED. Upper bound on it: results.md unmoved_mean of :oracleanchor, which is about
     mean ||B^_i - A^_i|| over unmoved objects (it also contains genuine false-motion errors). GATE
     PASSED if unmoved_mean(:oracleanchor, val_ood_config) <= 0.05 m. Reference: val_id's value, and
-    exp003's own-perception unmoved error on config of 0.134. The gate only conditions FALSIFIED: a
+    exp003's own-perception unmoved error on config of 0.134 (exp000 reference; the exp005 comparator
+    is exp004:ownstatic unmoved_mean on config). The gate reads results.md rows for :oracleanchor,
+    which must be present. The gate only conditions FALSIFIED: a
     SUPPORTED verdict stands regardless, since the bias works against it.
   precondition: >
     n_iso >= 30 on val_id and on val_ood_config, and Ciso.per_split_ci95[val_id] (rescaled) has an
@@ -170,9 +180,17 @@ decision_criteria:
     PARTIALLY SUPPORTED = 0.5 < rho < 0.75.
     INCONCLUSIVE = rho <= 0.5 with the gate failed, or the precondition failed.
   routing_readouts: >
-    Reporting and routing only, not the verdict.
-    (a) Overall recovery Q = K_oa_cfg / K_oa_id, compared with the own-path ratio 0.116 / 0.424 = 0.27
-    (exp003). With a conservative interval as above.
+    Reporting and routing only, not the verdict. Re-registered on exp005 before any exp004 result is
+    read. exp003 numbers below are exp000 REFERENCES only (different adapter), not comparators.
+    exp005 own-path values are not in any existing report; they are computed from exp004:ownstatic
+    (not from oracleanchor) with these formulas, written to the report before reading any
+    oracleanchor/stratum outcome: K_own_s = -G_s / static target_mean_s, with
+    G_s = `compare exp004_exp000_oracle_anchor exp004_exp000_oracle_anchor:ownstatic --splits S5`
+    per_split_diff, (= target_skill(:normal) - target_skill(:ownstatic)), and C3_s =
+    `compare exp004_exp000_oracle_anchor:ownstatic static --splits S5`.
+    (a) Overall recovery Q = K_oa_cfg / K_oa_id, compared with the exp005 own-path ratio
+    K_own_cfg / K_own_id (formula above; exp000 reference 0.116 / 0.424 = 0.27). With a conservative
+    interval as above.
     (b) Composition share Comp = (K_oa_id - K_cfg_comp) / (K_oa_id - K_oa_cfg), where
     K_cfg_comp = sum_k n_k,cfg * disp_k,cfg * K_k,id / sum_k n_k,cfg * disp_k,cfg is the config skill
     predicted from config's stratum mix at val_id's per-stratum skill. Comp >= 0.5 means "config has
@@ -180,11 +198,16 @@ decision_criteria:
     K_oa_id - K_oa_cfg >= 0.05.
     (c) In-distribution physics difficulty: K_cont_id and K_off_id vs K_iso_id (or K_hard_id after a
     merge).
-    (d) Second decomposition path for the config shift S_cfg = 0.139 (exp003): the perception part on
+    (d) Second decomposition path for the config shift S_cfg. exp005 version: S_cfg = (config diff vs
+    static) - (val_id diff vs static) of exp004:normal; exp005 report gives config 0.272 vs static 0.241
+    and val_id 0.157 vs static 0.265, i.e. about 0.139 (rounded, to be recomputed from compare). The
+    exp003 0.139 is the exp000 reference. The own-path split into 0.054 / 0.085 is exp000 only; the
+    exp005 own-path split is recomputed as delta C3 and delta G (formulas in the header of this block).
+    The perception part on
     the oracle path is P_oa = `compare exp004_exp000_oracle_anchor exp004_exp000_oracle_anchor:oracleanchor
     --splits val_id val_ood_config` (config diff minus val_id diff), and the dynamics part is
-    D_oa_cfg - D_oa_id. Report the Shapley-style average of the two paths with exp003's 0.054 / 0.085.
-    Point estimate only.
+    D_oa_cfg - D_oa_id. Report the Shapley-style average of the two paths with the exp005 own-path
+    delta C3 / delta G (exp000 reference 0.054 / 0.085). Point estimate only.
     (e) The same K_k on the three diag splits, especially corner (own-path K 0.237).
   routing: >
     R1 SUPPORTED and Q >= 0.75: the config dynamics loss on the own path is the perception offset,
@@ -202,9 +225,9 @@ decision_criteria:
 
 report_must_quote:
   - "agent.sh results: metrics.json; results.md rows for :normal, :ownstatic, :oracleanchor and the
-     three stratum files on S5 (Task B), and :oracleanchor target_skill and unmoved_mean on all 7 splits"
+     three stratum files on S5 (Task B), and :oracleanchor target_skill and unmoved_mean on all 8 splits"
   - "agent.sh log exp004_exp000_oracle_anchor 400: every stats line and every strata line"
-  - "reproduction compares (ii) and (iii) from success_criterion"
+  - "reproduction checks (i)-(iv) from success_criterion (vs exp005), and the exp005 own-path K_own / C3 / G values"
   - "Coa, Ciso, Ccont, Coff (or Chard after a merge) with per_split_diff, per_split_ci95 and
      per_split_n, plus the D_k / K_k / rho / Q / Comp table computed from them"
   - "the P_oa compare in (d)"
