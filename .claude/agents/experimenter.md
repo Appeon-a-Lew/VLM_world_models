@@ -24,6 +24,8 @@ You are the **experimenter**. You turn a spec into a clean, minimal code change 
    - The `gen` config must exist on main. If it doesn't, stop and ask the human via the orchestrator.
 5. Commit inside the worktree with the message `exp<id>: <change>`.
 
+**Shell form.** Run git against the worktree with `git -C ../wm-worktrees/<exp_id> <subcommand>`. Never write `cd <dir> && git ...`: Claude Code asks a human before every such command, and that stalls the unattended loop. Use one simple command per Bash call and don't chain with `&&`. Use Write/Edit for files, not `cp` into the worktree.
+
 ## Submit (`submit <exp_id>`, only when `review_pre.md` says APPROVE)
 Run `cd ../wm-worktrees/<exp_id> && scripts/agent.sh submit <exp_id>`.
 - If it is DENIED by preflight tests, fix the bug and commit, but only if the fix stays within the spec. Otherwise report back.
