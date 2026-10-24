@@ -27,6 +27,8 @@ Improve the Task B target error on the validation OOD splits (`val_ood_objects`,
 | ~~exp001_zeroshot_qwen3d~~ | ~~0.755~~ | ~~0.600~~ | ~~0.619~~ | – | – | **invalid as specified**: ran main's infer.py (48-token cap, no stats); superseded by exp002_zeroshot_qwen3d_rerun |
 | exp002_zeroshot_qwen3d_rerun | 0.735 (+0.356 vs static, CI [0.338, 0.375]) | 0.561 | 0.564 | uninterpretable (`none` missing 0.998); swap−normal A −0.063 [−0.089, −0.036] | 0.996 min | zero-shot reference; worse than static and exp000 on every split (C-004); (A) rejected: the correct image is worse than a swapped one |
 
+| exp005_exp000_repro | 0.316 (−0.063 vs static, CI [−0.073, −0.054]) | 0.157 | 0.015 | 0.343 | 1.000 | exp000 retrained unchanged on nc-10-1-1: REPRODUCED (tentative, C-009); now the adapter-bearing reference; blank-ablation order flipped vs exp000 |
+
 Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.510 / 0.664, config 0.269 / 0.241.
 
 ## Known facts (Phase 1 setup, 2026-10-24)
@@ -66,8 +68,8 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - Diagnostic splits `val_diag_elev`, `val_diag_count`, `val_diag_corner` (300 episodes each) are inferred in every job and listed in results.md, not in the primary metric.
 - Qwen3-VL bbox_3d centre/frame/units match our parser (camera frame, metres). Our qwen3d prompt is not Qwen's native template (adds K, frame sentence, multiple objects per query); exp001 measures "Qwen3-VL with our prompt" (IDEA-023).
 
-## Blocked (2026-10-24)
-- exp005_exp000_repro FAILED on nc-10-1-1: `Qwen3VLVideoProcessor requires the Torchvision library` (env gap, not code). Needs human to install torchvision in the venv; see `research/outbox/needs_human_torchvision_nc-10-1-1.md`. exp004 depends on exp005's adapter. Until then: literature and planning only.
+## Unblocked (2026-10-25)
+- The torchvision gap was fixed by the human; exp005 reran and finished (1.41 GPU-h). Adapter: `/var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter`. Read exp004 and later exp000-derived diagnostics against exp005, not exp000's recorded numbers. Next: exp004 (prepare in progress), then IDEA-040 (no-GPU prior baseline), IDEA-025/026.
 
 ## Open questions
 - Why does zero-shot exp002 do worse with the correct image than with a swapped one: a frame flip or offset, or hedging toward a default output? (IDEA-024/028/032)

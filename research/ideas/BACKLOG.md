@@ -551,3 +551,10 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: ~0.5 day, ~0.2 GPU-h. Should not need torchvision, but this is unverified; the HF checkpoint names for the metric models are unverified.
 - risk: metric depth from a model trained on real/Hypersim indoor scenes may be biased in scale on our renders; report the bias (median ratio to GT) separately from the spread.
 - status: proposed
+
+## IDEA-043 Seed-noise floor for the exp000 recipe: retrain with seed 1 (and inspect exp005 blank tail)
+- source: review of exp005_exp000_repro
+- background: exp005 matched exp000 within 0.0024 on the primary, but it is one same-seed repeat on a new box, so it is not a seed-noise estimate. The blank ablation differed by +0.055 and flipped the blank-vs-none order (exp005 blank-none +0.027 [+0.011, +0.043]; exp000 -0.014).
+- change: (a) zero GPU: list per-episode blank errors on val_id in exp005 (tail count, top-5 episodes, Task B vs Task A). (b) one change: seed 1, otherwise exp005's spec; report primary, per-split, gap and all three ablations.
+- cost: (a) none; (b) about 1.4 GPU-h.
+- status: proposed

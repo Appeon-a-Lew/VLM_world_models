@@ -17,6 +17,7 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - The CI now exists. `compare exp003_exp000_diag_eval:none exp003_exp000_diag_eval:normal --splits val_id` gives a gap of +0.331 [0.298, 0.363]. exp003 is bit-identical to exp000 (C-005).
   - On the last caveat: C-007 shows that the Task B answer beats the model's own-perception static baseline on val_id by 0.113 [0.097, 0.131]. So the Task B predictions carry information beyond t=0 localisation.
   - The none/blank/swap drop itself still mixes perception and dynamics. The status is unchanged.
+- **update (reviewer, 2026-10-25, review of exp005_exp000_repro)**: a second, independently trained adapter (same recipe, new box) replicates the qualitative result on val_id Task B target: normal 0.157, none 0.500, blank 0.527, swap 0.406, static 0.265, gap 0.3425. All three ablations are worse than static by at least 0.14. none and swap are within 0.015 of exp000. blank is +0.055 off exp000, and blank > none in exp005 (+0.027 [+0.011, +0.043]) but blank < none in exp000, so do not cite blank-vs-none. Status still tentative: both runs use seed 0 and there is no seed variance estimate.
 
 ## C-002 SFT beats static on the aggregate val-OOD Task B target mean, but not on every split
 - **claim**: Plain LoRA SFT lowers the mean Task B target error averaged over the three val OOD splits relative to static (which copies GT t=0 positions). The gain does not hold on val_ood_config.
@@ -27,6 +28,8 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - objects −0.071 [−0.080, −0.062];
   - forces −0.154 [−0.178, −0.130];
   - config +0.028 [+0.013, +0.042] ("b better").
+
+  **Replication (exp005_exp000_repro, 2026-10-25)**: retraining on the new box gives the same picture. Aggregate -0.0629 [-0.0725, -0.0535]; objects -0.071 [-0.080, -0.062]; forces -0.150 [-0.172, -0.126]; config +0.031 [+0.017, +0.045]. See C-009.
 
   The config failure is therefore CI-backed (single seed). missing_rate is 0.000 on every split for Task A and Task B (exp003 job.log, bit-identical to exp000 per C-005). The "per-split CIs are missing" and "missing_rate not yet reported" caveats are resolved. The status stays tentative: single seed, and the claim still fails the split-consistency bar by construction.
 
@@ -141,3 +144,15 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - Absence-of-effect claim. Task A has no cross-split CI (`compare --task A … static` is refused, and the splits are unpaired), so the bound is only the point gap of 0.003 m plus C3's upper bound of 0.003 m in Task B space.
   - Count may still interact with elevation or layout inside val_ood_config.
   - The opposite of zero-shot exp002, which ranked count worst. This is training-specific, single adapter and seed.
+
+## C-009 (methods) The exp000 SFT recipe retrains to the same val results on a new box (one repeat, same seed)
+- **claim**: Retraining the exp000 recipe unchanged (seed 0, new box nc-10-1-1, regenerated data with ±1/255 RGB noise) reproduces the exp000 headline numbers and the per-split pattern. The primary metric moved by only +0.0024.
+- **evidence**: exp005_exp000_repro (commit 90b1cc3, 1.41 GPU-h) vs the exp000 report. Primary 0.3160 vs 0.3136. Task B target: objects 0.161 vs 0.161, forces 0.515 vs 0.510, config 0.272 vs 0.269, val_id 0.157 vs 0.155. Task A val_id 0.0152 vs 0.016. Gap 0.3425 vs 0.331. Parse rate 1.000. exp005 vs static: -0.0629 [-0.0725, -0.0535]; per split objects/forces better, config worse (+0.031 [+0.017, +0.045]).
+- **status**: tentative
+- **caveats**:
+  - Single repeat with the same seed, so this does not estimate seed-to-seed variance. A different seed could move the primary by more.
+  - No paired CI against exp000 (predictions lost). Agreement is on aggregates only.
+  - The blank ablation did not reproduce (+0.055; the order against none flipped). Ablations built from inputs the model never saw in training are the least reproducible.
+  - The box change and the render noise are confounded.
+  - C-005 (inference bit-reproducibility) is separate and still holds only for a fixed adapter.
+  - Retraining is not bit-exact, though the numbers are close.
