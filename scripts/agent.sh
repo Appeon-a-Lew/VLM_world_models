@@ -12,7 +12,7 @@
 #   scripts/agent.sh gen <config> <split> <seed_start> <n>
 #   scripts/agent.sh final-eval <exp_id>         # refused without a human approval token
 set -euo pipefail
-HOST=${AGENT_HOST:-nc-11-1-2}
+HOST=${AGENT_HOST:-nc-10-1-1}
 SSH=(ssh -o BatchMode=yes -o LogLevel=ERROR -o ConnectTimeout=20 "$HOST")
 remote() {  # remote <exec args...>; arguments are shell-quoted
   local q

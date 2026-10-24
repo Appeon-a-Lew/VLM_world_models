@@ -4,7 +4,7 @@
 #   scripts/approve.sh exp003_foo
 set -euo pipefail
 exp=$1
-HOST=${AGENT_HOST:-nc-11-1-2}
+HOST=${AGENT_HOST:-nc-10-1-1}
 ssh -o BatchMode=yes -o LogLevel=ERROR "$HOST" "set -e; W=/var/tmp/toyi/wm
   c=\$(python3 -c \"import json;print(json.load(open('\$W/experiments/$exp/status.json'))['commit'])\")
   echo \"experiment $exp at commit \$c\"; cat \$W/experiments/$exp/metrics.json

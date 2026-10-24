@@ -1,0 +1,9 @@
+# Diagnostic (validation only): ood_config's camera elevation AND corner cluster together (training count).
+base: sim_train.yaml
+name: diag_elev_corner
+objects:
+  min_gap: 0.01
+  region: [0.12, 0.1]
+  region_center: [0.3, 0.18]
+camera:
+  elevation: [12, 25]
