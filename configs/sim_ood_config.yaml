@@ -1,0 +1,11 @@
+# OOD: unseen spatial configurations -- more objects, tighter clusters near the table edge,
+# lower / higher camera elevation than in training.
+base: sim_train.yaml
+name: ood_config
+objects:
+  count: [4, 5]
+  min_gap: 0.01
+  region: [0.12, 0.1]
+  region_center: [0.3, 0.18]       # cluster sits near a table corner
+camera:
+  elevation: [12, 25]

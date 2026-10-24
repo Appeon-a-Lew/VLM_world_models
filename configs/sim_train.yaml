@@ -1,0 +1,41 @@
+# In-distribution scene / action sampling. Used for `train` and `id_test` (disjoint seed ranges).
+# Every OOD config inherits from this file (`base:`) and overrides single fields.
+name: train
+
+objects:
+  count: [1, 3]                    # inclusive range
+  shapes: [box, cylinder, sphere]
+  half_size: [0.025, 0.06]         # m, footprint half-width
+  aspect: [0.6, 2.2]               # height / width (ignored for spheres)
+  density: [400, 800]              # kg/m^3, narrow so mass is ~inferable from visible size
+  friction: [0.35, 0.6]            # sliding friction coefficient
+  rolling_friction: 0.006          # m; ball rolling decel ~ mu_roll * g / r (~1.5 m/s^2 at r = 4 cm)
+  colors: [red, green, blue, yellow, purple, orange, white, black, cyan, pink, brown, gray]
+  min_gap: 0.03                    # m between footprints at placement
+  region: [0.22, 0.14]             # half extents of the placement area around the table centre
+
+table:
+  half_size: [0.5, 0.35]           # m; top surface at z = 0
+  height: 0.75                     # floor at z = -height
+
+camera:
+  width: 448
+  height: 448
+  fovy: 50
+  distance: [0.9, 1.3]
+  elevation: [30, 60]              # degrees above the table plane
+  azimuth: [-180, 180]
+  lookat_jitter: 0.05
+
+push:
+  directions: [left, right, away, toward]   # camera-relative
+  direction_jitter_deg: 15
+  aim_at_other_prob: 0.4           # pick the camera-relative direction closest to another object
+  speed: [0.3, 1.6]                # m/s initial speed of the target; impulse = mass * speed
+
+sim:
+  timestep: 0.002
+  settle: 0.5                      # s before the push
+  horizon: 2.0                     # s after the push
+  store_times: [0.0, 1.0, 2.0]
+  traj_hz: 50                      # dense trajectory rate (timestep multiple; includes t = 0.1 s)

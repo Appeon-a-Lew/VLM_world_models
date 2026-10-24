@@ -1,0 +1,14 @@
+id: exp000_sft_baseline
+hypothesis: >
+  Plain LoRA SFT of Qwen3-VL-2B on Task A + B (CE loss on JSON answers) learns grounded push
+  outcomes in-distribution, but generalises worse to the OOD validation splits.
+change: none (reference baseline for all later experiments)
+baseline: static
+kind: train                          # train | eval_only
+train_config: configs/sft_qwen3vl2b.yaml
+style: center                        # prompt / answer format for inference
+ablations: [none, blank, swap]       # image-dependence test on val_id
+budget_hours: 3
+seed: 0
+# optional: model (base model id), lora (adapter path under $WM/experiments for eval_only),
+#           eval_limit (episodes per val split), batch_size

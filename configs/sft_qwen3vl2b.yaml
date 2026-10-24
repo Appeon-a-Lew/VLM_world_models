@@ -1,0 +1,24 @@
+model: Qwen/Qwen3-VL-2B-Instruct
+data: /var/tmp/toyi/wm/data
+train_split: train
+tasks: [A, B]           # A keeps grounding honest, B is the dynamics target
+out: /var/tmp/toyi/wm/runs/sft_qwen3vl2b
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  # language model only (the vision encoder stays frozen)
+  target_modules: '.*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)'
+
+epochs: 2
+batch_size: 4
+grad_accum: 4
+lr: 2.0e-4
+weight_decay: 0.0
+warmup_frac: 0.03
+gradient_checkpointing: true
+num_workers: 6
+log_every: 20
+save_every: 500
+seed: 0

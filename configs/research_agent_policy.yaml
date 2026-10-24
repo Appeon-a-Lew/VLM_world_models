@@ -1,0 +1,75 @@
+# Research-agent policy (v1.0). Read by physwm/agent/exec.py (the only GPU entry point for the agent)
+# and by the loop instructions in research/LOOP.md.
+#
+# Principle: the agent may optimise the research implementation, but it cannot redefine what counts
+# as scientific success (metrics, final test sets, baselines).
+#
+# Enforcement is layered and NOT a sandbox: (1) Claude Code permission rules in .claude/settings.json
+# (agent can only reach the GPUs via scripts/agent.sh, cannot edit eval code / manifests on main),
+# (2) checks in physwm/agent/exec.py (budgets, protected splits, pinned eval code, approval tokens).
+# The agent's jobs run as the same unix user that owns the data.
+
+policy:
+  version: "1.0"
+  project: adl4cv-worldmodels
+  default_decision: deny
+
+permissions:
+  evaluate_existing: auto
+  generate_approved_data: auto
+  research_literature: auto
+  propose_hypotheses: auto
+  edit_training_code: auto          # only inside experiment worktrees, never on main
+  edit_model_architecture: auto
+  run_small_gpu_experiment: auto
+  run_large_gpu_experiment: auto
+  change_final_test_definitions: approval
+  run_final_test: approval          # token from scripts/approve.sh (human only)
+  publish_results: approval
+  send_external_messages: approval
+
+resources:
+  host: nc-11-1-2
+  max_concurrent_gpu_jobs: 1
+  small_experiment_max_hours: 3
+  large_experiment_max_hours: 24
+  max_gpu_hours_per_day: 12
+  max_gpu_hours_per_week: 48
+  gpu_free_max_used_mib: 2500       # refuse to launch if someone else is using the GPU
+  retry_failed_job_max: 1
+
+data:
+  protected_splits: [id_test, ood_objects, ood_forces, ood_config]   # final held-out test
+  protected_manifest: manifests/final_test.json
+  validation_splits: [val_id, val_ood_objects, val_ood_forces, val_ood_config]
+  ablation_split: val_id            # image-dependence test runs here
+  agent_split_prefixes: [train, val, dev]   # names the agent may generate
+  reserved_seed_ranges: [[1000000, 5000000]] # protected test seeds; never regenerate
+
+evaluation:
+  # fixed by policy -- an experiment cannot change these
+  primary_metric: val_ood_target_mean     # Task B, target object, mean 3D L2 (m), avg over val OOD splits
+  secondary_metrics:
+    - val_id_target_mean
+    - val_id_all_mean
+    - taskA_val_id_all_mean               # perception ceiling
+    - image_dependence_gap                # err(no image) - err(image) on val_id, Task B target
+  baselines: [static, const_velocity, exp000_sft_baseline]
+  improvement_threshold: 0.005            # m; smaller differences count as "comparable"
+  prefer_simpler_when_comparable: true
+
+research_integrity:
+  require_git_commit: true
+  require_clean_worktree: true
+  require_tests_before_training: true
+  allow_dependency_changes: false         # pyproject.toml must match main
+  max_intentional_changes_per_experiment: 1
+  report_parse_failures: true
+  report_failed_runs: true
+
+stopping_conditions:
+  stop_on_test_failure: true
+  stop_on_invalid_metrics: true
+  stop_on_resource_limit: true
+  stop_on_unapproved_action: true
+  max_consecutive_failed_experiments: 3

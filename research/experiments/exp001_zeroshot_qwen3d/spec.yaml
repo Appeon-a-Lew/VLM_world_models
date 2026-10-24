@@ -1,0 +1,11 @@
+id: exp001_zeroshot_qwen3d
+hypothesis: >
+  Zero-shot Qwen3-VL-2B with its native bbox_3d grounding format already gives better-than-trivial
+  3D centres for the current state (Task A), but cannot predict push outcomes (Task B worse than static).
+change: no training; native 3D-grounding prompt
+baseline: static
+kind: eval_only
+style: qwen3d
+ablations: [none]
+budget_hours: 1
+seed: 0

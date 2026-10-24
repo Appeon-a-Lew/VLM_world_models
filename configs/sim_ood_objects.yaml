@@ -1,0 +1,5 @@
+# OOD: shapes never seen in training.
+base: sim_train.yaml
+name: ood_objects
+objects:
+  shapes: [capsule, cone, hexprism]

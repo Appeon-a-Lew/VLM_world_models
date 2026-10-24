@@ -1,0 +1,447 @@
+{
+ "version": 1,
+ "splits": [
+  {
+   "split": "id_test",
+   "config_name": "train",
+   "config": {
+    "name": "train",
+    "objects": {
+     "count": [
+      1,
+      3
+     ],
+     "shapes": [
+      "box",
+      "cylinder",
+      "sphere"
+     ],
+     "half_size": [
+      0.025,
+      0.06
+     ],
+     "aspect": [
+      0.6,
+      2.2
+     ],
+     "density": [
+      400,
+      800
+     ],
+     "friction": [
+      0.35,
+      0.6
+     ],
+     "rolling_friction": 0.006,
+     "colors": [
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "purple",
+      "orange",
+      "white",
+      "black",
+      "cyan",
+      "pink",
+      "brown",
+      "gray"
+     ],
+     "min_gap": 0.03,
+     "region": [
+      0.22,
+      0.14
+     ]
+    },
+    "table": {
+     "half_size": [
+      0.5,
+      0.35
+     ],
+     "height": 0.75
+    },
+    "camera": {
+     "width": 448,
+     "height": 448,
+     "fovy": 50,
+     "distance": [
+      0.9,
+      1.3
+     ],
+     "elevation": [
+      30,
+      60
+     ],
+     "azimuth": [
+      -180,
+      180
+     ],
+     "lookat_jitter": 0.05
+    },
+    "push": {
+     "directions": [
+      "left",
+      "right",
+      "away",
+      "toward"
+     ],
+     "direction_jitter_deg": 15,
+     "aim_at_other_prob": 0.4,
+     "speed": [
+      0.3,
+      1.6
+     ]
+    },
+    "sim": {
+     "timestep": 0.002,
+     "settle": 0.5,
+     "horizon": 2.0,
+     "store_times": [
+      0.0,
+      1.0,
+      2.0
+     ],
+     "traj_hz": 50
+    }
+   },
+   "seed_start": 1000000,
+   "n": 1000,
+   "sha256": "3515fce5049003733b4388a526f7d564f464b9ea1aba8d93b780069dc8590198"
+  },
+  {
+   "split": "ood_objects",
+   "config_name": "ood_objects",
+   "config": {
+    "name": "ood_objects",
+    "objects": {
+     "count": [
+      1,
+      3
+     ],
+     "shapes": [
+      "capsule",
+      "cone",
+      "hexprism"
+     ],
+     "half_size": [
+      0.025,
+      0.06
+     ],
+     "aspect": [
+      0.6,
+      2.2
+     ],
+     "density": [
+      400,
+      800
+     ],
+     "friction": [
+      0.35,
+      0.6
+     ],
+     "rolling_friction": 0.006,
+     "colors": [
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "purple",
+      "orange",
+      "white",
+      "black",
+      "cyan",
+      "pink",
+      "brown",
+      "gray"
+     ],
+     "min_gap": 0.03,
+     "region": [
+      0.22,
+      0.14
+     ]
+    },
+    "table": {
+     "half_size": [
+      0.5,
+      0.35
+     ],
+     "height": 0.75
+    },
+    "camera": {
+     "width": 448,
+     "height": 448,
+     "fovy": 50,
+     "distance": [
+      0.9,
+      1.3
+     ],
+     "elevation": [
+      30,
+      60
+     ],
+     "azimuth": [
+      -180,
+      180
+     ],
+     "lookat_jitter": 0.05
+    },
+    "push": {
+     "directions": [
+      "left",
+      "right",
+      "away",
+      "toward"
+     ],
+     "direction_jitter_deg": 15,
+     "aim_at_other_prob": 0.4,
+     "speed": [
+      0.3,
+      1.6
+     ]
+    },
+    "sim": {
+     "timestep": 0.002,
+     "settle": 0.5,
+     "horizon": 2.0,
+     "store_times": [
+      0.0,
+      1.0,
+      2.0
+     ],
+     "traj_hz": 50
+    }
+   },
+   "seed_start": 2000000,
+   "n": 1000,
+   "sha256": "16229d4520f224fe8521ad043716e14544310423816b359a77be7b5adaab1ce6"
+  },
+  {
+   "split": "ood_forces",
+   "config_name": "ood_forces",
+   "config": {
+    "name": "ood_forces",
+    "objects": {
+     "count": [
+      1,
+      3
+     ],
+     "shapes": [
+      "box",
+      "cylinder",
+      "sphere"
+     ],
+     "half_size": [
+      0.025,
+      0.06
+     ],
+     "aspect": [
+      0.6,
+      2.2
+     ],
+     "density": [
+      400,
+      800
+     ],
+     "friction": [
+      0.35,
+      0.6
+     ],
+     "rolling_friction": 0.006,
+     "colors": [
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "purple",
+      "orange",
+      "white",
+      "black",
+      "cyan",
+      "pink",
+      "brown",
+      "gray"
+     ],
+     "min_gap": 0.03,
+     "region": [
+      0.22,
+      0.14
+     ]
+    },
+    "table": {
+     "half_size": [
+      0.5,
+      0.35
+     ],
+     "height": 0.75
+    },
+    "camera": {
+     "width": 448,
+     "height": 448,
+     "fovy": 50,
+     "distance": [
+      0.9,
+      1.3
+     ],
+     "elevation": [
+      30,
+      60
+     ],
+     "azimuth": [
+      -180,
+      180
+     ],
+     "lookat_jitter": 0.05
+    },
+    "push": {
+     "directions": [
+      "left",
+      "right",
+      "away",
+      "toward"
+     ],
+     "direction_jitter_deg": 15,
+     "aim_at_other_prob": 0.4,
+     "speed": [
+      0.3,
+      1.6
+     ],
+     "speed_choices": [
+      [
+       0.08,
+       0.25
+      ],
+      [
+       2.0,
+       2.8
+      ]
+     ]
+    },
+    "sim": {
+     "timestep": 0.002,
+     "settle": 0.5,
+     "horizon": 2.0,
+     "store_times": [
+      0.0,
+      1.0,
+      2.0
+     ],
+     "traj_hz": 50
+    }
+   },
+   "seed_start": 3000000,
+   "n": 1000,
+   "sha256": "585256f7f5c788520b55f4c8d261d0c09d53b79db74ed03b2996c6175c966a7d"
+  },
+  {
+   "split": "ood_config",
+   "config_name": "ood_config",
+   "config": {
+    "name": "ood_config",
+    "objects": {
+     "count": [
+      4,
+      5
+     ],
+     "shapes": [
+      "box",
+      "cylinder",
+      "sphere"
+     ],
+     "half_size": [
+      0.025,
+      0.06
+     ],
+     "aspect": [
+      0.6,
+      2.2
+     ],
+     "density": [
+      400,
+      800
+     ],
+     "friction": [
+      0.35,
+      0.6
+     ],
+     "rolling_friction": 0.006,
+     "colors": [
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "purple",
+      "orange",
+      "white",
+      "black",
+      "cyan",
+      "pink",
+      "brown",
+      "gray"
+     ],
+     "min_gap": 0.01,
+     "region": [
+      0.12,
+      0.1
+     ],
+     "region_center": [
+      0.3,
+      0.18
+     ]
+    },
+    "table": {
+     "half_size": [
+      0.5,
+      0.35
+     ],
+     "height": 0.75
+    },
+    "camera": {
+     "width": 448,
+     "height": 448,
+     "fovy": 50,
+     "distance": [
+      0.9,
+      1.3
+     ],
+     "elevation": [
+      12,
+      25
+     ],
+     "azimuth": [
+      -180,
+      180
+     ],
+     "lookat_jitter": 0.05
+    },
+    "push": {
+     "directions": [
+      "left",
+      "right",
+      "away",
+      "toward"
+     ],
+     "direction_jitter_deg": 15,
+     "aim_at_other_prob": 0.4,
+     "speed": [
+      0.3,
+      1.6
+     ]
+    },
+    "sim": {
+     "timestep": 0.002,
+     "settle": 0.5,
+     "horizon": 2.0,
+     "store_times": [
+      0.0,
+      1.0,
+      2.0
+     ],
+     "traj_hz": 50
+    }
+   },
+   "seed_start": 4000000,
+   "n": 1000,
+   "sha256": "377ce66976ceeeb4f00dde35cc9ed916091d7ead91544e0adddc1493b6fb5975"
+  }
+ ]
+}

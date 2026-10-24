@@ -1,0 +1,30 @@
+[project]
+name = "physwm"
+version = "0.1.0"
+description = "VLMs as physical world models: grounded 3D future-state prediction from simulated tabletop pushes"
+requires-python = ">=3.10"
+dependencies = [
+    "mujoco>=3.2",
+    "numpy",
+    "scipy",
+    "pillow",
+    "opencv-python-headless",
+    "pyyaml",
+    "tqdm",
+    "torch",
+    "transformers>=4.57",
+    "peft",
+    "accelerate",
+    "qwen-vl-utils",
+    "huggingface_hub",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["physwm*"]

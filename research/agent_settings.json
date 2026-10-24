@@ -1,0 +1,63 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/agent.sh:*)",
+      "Bash(../../adl4cv-worlmodels/scripts/agent.sh:*)",
+      "Bash(/home/appeon_a_lew/adl4cv-worlmodels/scripts/agent.sh:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git worktree add:*)",
+      "Bash(git worktree list:*)",
+      "Bash(git -C:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(mkdir -p:*)",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "deny": [
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(rsync:*)",
+      "Bash(scripts/sync.sh:*)",
+      "Bash(scripts/approve.sh:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout main:*)",
+      "Bash(git branch -D:*)",
+      "Bash(rm -rf:*)",
+      "Bash(sed -i:*)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/physwm/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/configs/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/manifests/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/scripts/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/tests/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/pyproject.toml)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/research/LOOP.md)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/research/agent_settings.json)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/configs/research_agent_policy.yaml)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/manifests/**)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/physwm/eval/**)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/physwm/agent/**)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/pyproject.toml)",
+      "Edit(//home/appeon_a_lew/wm-worktrees/*/scripts/**)",
+      "Edit(//home/appeon_a_lew/.claude/**)"
+    ],
+    "ask": [
+      "Artifact",
+      "mcp__plugin_miro_miro__canvas_create_from_svg",
+      "mcp__plugin_miro_miro__canvas_update_from_svg",
+      "mcp__plugin_miro_miro__comment_create",
+      "mcp__plugin_miro_miro__comment_reply",
+      "mcp__plugin_miro_miro__board_share",
+      "mcp__claude_ai_Claude_Docs__batch",
+      "mcp__claude_ai_Claude_Docs__update"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+# OOD: push strengths outside the training range (both weaker and stronger).
+base: sim_train.yaml
+name: ood_forces
+push:
+  speed_choices: [[0.08, 0.25], [2.0, 2.8]]   # sampled uniformly from one of these intervals
