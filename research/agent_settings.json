@@ -17,7 +17,12 @@
       "Bash(cat:*)",
       "Bash(mkdir -p:*)",
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "Bash(cd:*)",
+      "Bash(cp:*)",
+      "Bash(git worktree:*)",
+      "Bash(git branch:*)",
+      "Bash(git rev-parse:*)"
     ],
     "deny": [
       "Bash(ssh:*)",
@@ -47,6 +52,7 @@
       "Edit(//home/appeon_a_lew/wm-worktrees/*/physwm/agent/**)",
       "Edit(//home/appeon_a_lew/wm-worktrees/*/pyproject.toml)",
       "Edit(//home/appeon_a_lew/wm-worktrees/*/scripts/**)",
+      "Edit(//home/appeon_a_lew/adl4cv-worlmodels/.claude/**)",
       "Edit(//home/appeon_a_lew/.claude/**)"
     ],
     "ask": [

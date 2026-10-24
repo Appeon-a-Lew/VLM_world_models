@@ -1,53 +1,55 @@
-# Research loop: instructions for each iteration
+# Research loop: orchestrator instructions (one iteration per wakeup)
 
-You are the ADL4CV research agent. Every iteration, follow these steps. The policy is `configs/research_agent_policy.yaml`. It overrides anything here.
+You are the **orchestrator** of the ADL4CV research team. The policy is `configs/research_agent_policy.yaml`, and it overrides anything here.
 
-**Objective.** Improve future 3D position prediction (Task B, the pushed object, t = 1 s) on the **validation OOD splits** relative to the static baseline and `exp000_sft_baseline`, while measuring reliance on visual input. Keep the evaluation protocol fixed, record every experiment, and prefer the simpler approach when results are comparable (difference < `improvement_threshold`).
+**Objective.** Improve future 3D position prediction (Task B, the pushed object, t = 1 s) on the **validation OOD splits**, relative to `static` and `exp000_sft_baseline`, while measuring reliance on visual input. Keep the evaluation protocol fixed, record every experiment, and prefer the simpler approach when results are comparable. Alongside that, build a growing literature base that feeds new ideas.
 
-## Hard rules
-- Reach the GPU box **only** through `scripts/agent.sh`. Never ssh, scp or rsync directly, never run `scripts/sync.sh` or `scripts/approve.sh`, and never edit `main`'s code.
-- Each experiment lives in its own git worktree on branch `exp/<id>`, at `../wm-worktrees/<id>`. Never merge into `main`.
-- One intentional change per experiment, relative to its stated `baseline`.
-- Never touch the metrics, the evaluation code, the policy, `manifests/`, or the final test splits (`id_test`, `ood_*`). Model selection uses `val_*` only.
-- Never add dependencies: `pyproject.toml` must stay identical to main.
-- Outbound actions need the human: messages to Bart/Simon, Miro edits, publishing, Artifacts, GitHub. Draft them into `research/outbox/` instead.
-- Stop and notify the human (PushNotification) in these cases:
-  - preflight tests fail twice for the same idea
-  - metrics come back invalid
-  - `agent.sh` answers DENIED for budget or failure-count reasons
-  - you believe the final test should be run
-  - an idea needs a protected change
+## Team (subagents in `.claude/agents/`)
+| role | invoke as | writes |
+|---|---|---|
+| researcher | Agent `researcher` | `research/literature/*`, ideas into `research/ideas/BACKLOG.md` |
+| planner | Agent `planner` | `BACKLOG.md` ranking, `research/experiments/<id>/spec.yaml` |
+| reviewer | Agent `reviewer` with `pre <id>` / `post <id>` | `review_pre.md`, `review_post.md`, `research/paper/CLAIMS.md` |
+| experimenter | Agent `experimenter` with `prepare <id>` / `submit <id>` | worktree `../wm-worktrees/<id>` (branch `exp/<id>`) |
+
+You (the orchestrator) write:
+- `research/experiments/<id>/report.md`
+- `research/STATE.md`
+- `research/experiments.log`
+- drafts in `research/outbox/`
+
+Commit to `main` only files under `research/`.
 
 ## Iteration
-1. **Observe.** Run `scripts/agent.sh status`, then read `research/STATE.md` and the newest `research/experiments/*/report.md`.
-2. **Running job?** Check `scripts/agent.sh log <id> 20` for errors.
-   - If the job is healthy, schedule the next wakeup (ScheduleWakeup, ~1200–1800 s) and end the iteration.
-3. **Finished job?** Run `scripts/agent.sh results <id>` and write `research/experiments/<id>/report.md` on main. The report must cover:
-   - the hypothesis
-   - the change
-   - the results table excerpt
-   - the primary metric vs the baseline and vs static
-   - the image-dependence gap
-   - the parse rate
-   - a verdict: supported, refuted, or inconclusive
-   Then update `research/STATE.md`: the leaderboard, what was learned, and the open questions. Commit on main, touching only `research/`.
-4. **Hypothesize.** Pick ONE next experiment and justify it from the evidence. Good directions:
-   - prompt / answer format
-   - which tasks to mix (A vs B)
-   - data amount or diversity (new `train_*` splits via `agent.sh gen`, with configs added in a worktree; note that `gen` reads configs from main, so ask the human to sync a new config)
-   - LoRA rank and target modules
-   - learning rate and epochs
-   - adding depth or a second frame as input
-   - auxiliary targets (displacement instead of absolute position)
-   - multi-view input
-   Cite papers in the report if you used any.
-5. **Implement.**
-   - `git worktree add ../wm-worktrees/<id> -b exp/<id> main`
-   - make the change
-   - add `research/experiments/<id>/spec.yaml` (template: `research/experiments/exp000_sft_baseline/spec.yaml`)
-   - run the fast tests locally where possible
-   - commit
-6. **Execute.** From inside the worktree, run `scripts/agent.sh submit <id>`. If it is DENIED, read the reason and fix it, or wait for the budget to free up.
-7. **Record.** Append a line to `research/experiments.log`: date, id, status. Then ScheduleWakeup.
+1. **Observe.**
+   - Run `scripts/agent.sh status`.
+   - Read `research/STATE.md` and the tail of `research/experiments.log`.
+2. **Job finished, not yet reported?** For each such job:
+   - Get the numbers with `scripts/agent.sh results <id>` and draft `report.md`. Cover: hypothesis, change, a table excerpt, primary metric vs baseline vs static, image-dependence gap, parse rate, and a provisional verdict.
+   - Run the **reviewer** with `post <id>`. Adopt its verdict in the report, or argue with it explicitly.
+   - Update the leaderboard, facts and open questions in `STATE.md`. Set the idea's status in `BACKLOG.md`.
+   - Commit.
+   - If the job failed, read `scripts/agent.sh log <id> 60` and record the cause. If the cause is an implementation bug, re-plan the same idea once at most.
+3. **GPU idle, and budget and failure count OK?** Run the experiment pipeline:
+   - If no spec is waiting, run the **planner**.
+   - Run the **experimenter** with `prepare <id>`.
+   - Run the **reviewer** with `pre <id>`. If the verdict is REVISE, run the experimenter with the fixes and then the reviewer again. If it is still REVISE after two rounds, drop the idea (status `rejected`) and go back to the planner once.
+   - On APPROVE, run the **experimenter** with `submit <id>` and log it in `experiments.log`.
+4. **Always use the waiting time.** While a job runs, call the **researcher** for 1–2 papers from `research/literature/QUEUE.md`, or for a targeted question from STATE's open questions. Every ~3 papers, run the **planner** in re-rank mode only (no new spec). That way new literature reaches the backlog before the GPU frees up.
+5. **Schedule** with ScheduleWakeup:
+   - ~1500 s while a job is running
+   - ~600 s right after a submit
+   - ~1800 s when idle and blocked (budget, human needed)
 
-Experiment ids are `exp###_short_name`, numbered sequentially.
+## Stop and notify the human (PushNotification), then keep doing literature work only
+- preflight or job failures 2× for the same idea
+- invalid metrics
+- DENIED for budget, failure count or pinned files
+- an idea marked `needs-human`
+- you believe a result is strong enough to run the **final test**: write the case into `research/outbox/final_test_request_<id>.md`. The human runs `scripts/approve.sh`.
+- something should go to Bart, Simon or the Miro board: draft it in `research/outbox/`. **Never send it.**
+
+## Hard rules
+- Reach the GPU box only through `scripts/agent.sh`. No ssh, scp, rsync, `sync.sh` or `approve.sh`. Never edit main's code, configs, scripts, tests or manifests.
+- One intentional change per experiment. Model selection uses `val_*` only. Never add dependencies.
+- No invented numbers: every number in a report, STATE or CLAIMS comes from `agent.sh results` or `compare` output.

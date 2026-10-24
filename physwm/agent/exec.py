@@ -5,7 +5,7 @@ snapshot of one git commit (sent by scripts/agent.sh as a tar on stdin) and is o
 training / inference. Evaluation, metrics, baselines and the policy always come from the main copy,
 whose hashes are pinned by a human (`pin`), so an experiment cannot change what counts as success.
 
-Agent-facing ops (via scripts/agent.sh): status, submit, gen, results, log, cancel, final-eval
+Agent-facing ops (via scripts/agent.sh): status, submit, gen, results, log, cancel, compare, final-eval
 Human-only ops (run on the box directly): pin, reset-failures
 """
 
@@ -354,6 +354,57 @@ def op_log(args) -> None:
             print(f"## {f}\n" + "\n".join(lines[-args.n:]))
 
 
+def _target_errors(method: str, splits: list[str]) -> dict[str, dict[str, float]]:
+    """split -> {episode_id: Task B target error} for an experiment id or a val baseline name."""
+    from physwm.eval.metrics import load_predictions, per_object_rows
+    from physwm.schema import load_split
+
+    path = (AGENT / "val_baselines" / f"{method}.jsonl" if method in ("static", "const_velocity")
+            else EXPS / method / "pred" / "normal.jsonl")
+    if not path.exists():
+        raise Denied(f"no validation predictions for {method}")
+    preds = {p["episode_id"]: p for p in load_predictions(path) if p["task"] == "B"}
+    out = {}
+    for s in splits:
+        out[s] = {}
+        for _, ep in load_split(DATA, s):
+            p = preds.get(ep.episode_id, {"task": "B", "objects": {}})
+            out[s][ep.episode_id] = next(r["err"] for r in per_object_rows(p, ep) if r["target"])
+    return out
+
+
+def op_compare(args) -> None:
+    """Paired bootstrap of the primary metric (val OOD, Task B target mean) between two methods.
+    diff = a - b; negative means `a` is better."""
+    import numpy as np
+
+    ood = [s for s in POLICY["data"]["validation_splits"] if "ood" in s]
+    ea, eb = _target_errors(args.a, ood), _target_errors(args.b, ood)
+    rng = np.random.default_rng(0)
+    per_split = {s: (np.array([ea[s][k] for k in sorted(ea[s])]), np.array([eb[s][k] for k in sorted(ea[s])]))
+                 for s in ood}
+    point = float(np.mean([a.mean() - b.mean() for a, b in per_split.values()]))
+    boots = []
+    for _ in range(args.n_boot):
+        d = []
+        for a, b in per_split.values():
+            idx = rng.integers(0, len(a), len(a))
+            d.append(a[idx].mean() - b[idx].mean())
+        boots.append(np.mean(d))
+    lo, hi = np.percentile(boots, [2.5, 97.5])
+    thr = POLICY["evaluation"]["improvement_threshold"]
+    verdict = ("a better" if hi < 0 and point < -thr else
+               "b better" if lo > 0 and point > thr else "comparable / not significant")
+    print(json.dumps({
+        "metric": POLICY["evaluation"]["primary_metric"], "a": args.a, "b": args.b,
+        "a_value": float(np.mean([a.mean() for a, _ in per_split.values()])),
+        "b_value": float(np.mean([b.mean() for _, b in per_split.values()])),
+        "diff_a_minus_b": point, "ci95": [float(lo), float(hi)],
+        "per_split_diff": {s: float(a.mean() - b.mean()) for s, (a, b) in per_split.items()},
+        "improvement_threshold": thr, "verdict": verdict,
+    }, indent=1))
+
+
 def op_cancel(args) -> None:
     st = exp_status(args.exp)
     if st.get("state") == "running" and alive(st["pid"]):
@@ -460,6 +511,10 @@ def main():
     p = sub.add_parser("log")
     p.add_argument("--exp", required=True)
     p.add_argument("--n", type=int, default=40)
+    p = sub.add_parser("compare")
+    p.add_argument("--a", required=True)
+    p.add_argument("--b", required=True)
+    p.add_argument("--n-boot", type=int, default=2000)
     p = sub.add_parser("gen")
     p.add_argument("--config", required=True)
     p.add_argument("--split", required=True)
@@ -472,7 +527,7 @@ def main():
     AGENT.mkdir(parents=True, exist_ok=True)
     try:
         {"status": op_status, "submit": op_submit, "job": op_job, "results": op_results,
-         "log": op_log, "cancel": op_cancel, "gen": op_gen, "final-eval": op_final_eval,
+         "log": op_log, "cancel": op_cancel, "compare": op_compare, "gen": op_gen, "final-eval": op_final_eval,
          "pin": op_pin, "reset-failures": op_reset_failures}[args.op](args)
     except Denied as e:
         ledger_append({"event": "denied", "op": args.op, "reason": str(e), "t": now()})
