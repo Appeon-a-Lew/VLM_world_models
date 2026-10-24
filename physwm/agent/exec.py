@@ -236,12 +236,14 @@ def op_submit(args) -> None:
     print(f"submitted {args.exp} (commit {args.commit[:10]}, pid {p.pid}, budget {spec['budget_hours']} h)")
 
 
-def _run(cmd: list[str], env: dict, deadline: float, log) -> None:
+def _run(cmd: list[str], env: dict, deadline: float, log, cwd: Path) -> None:
+    """cwd must be the experiment's code dir: `python -m` puts the cwd first on sys.path, ahead of
+    PYTHONPATH, so running from MAIN would silently execute main's copy instead of the snapshot."""
     remaining = deadline - now()
     if remaining <= 0:
         raise TimeoutError("budget exhausted")
     print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, env=env, check=True, timeout=remaining, stdout=log, stderr=subprocess.STDOUT)
+    subprocess.run(cmd, env=env, cwd=cwd, check=True, timeout=remaining, stdout=log, stderr=subprocess.STDOUT)
 
 
 def op_job(args) -> None:
@@ -256,7 +258,7 @@ def op_job(args) -> None:
         lora = spec.get("lora")
         if spec["kind"] == "train":
             _run([sys.executable, "-m", "physwm.vlm.sft", "--config", str(code / spec["train_config"]),
-                  "--out", str(exp_dir / "model")], env_code, deadline, log)
+                  "--out", str(exp_dir / "model")], env_code, deadline, log, code)
             lora = str(exp_dir / "model" / "adapter")
         model = spec.get("model", "Qwen/Qwen3-VL-2B-Instruct")
         infer = [sys.executable, "-m", "physwm.vlm.infer", "--data", str(DATA), "--model", model,
@@ -265,10 +267,10 @@ def op_job(args) -> None:
         infer += ["--limit", str(spec["eval_limit"])] if spec.get("eval_limit") else []
         pred = exp_dir / "pred"
         _run(infer + ["--splits", *POLICY["data"]["validation_splits"], *DIAG_SPLITS,
-                      "--out", str(pred / "normal.jsonl")], env_code, deadline, log)
+                      "--out", str(pred / "normal.jsonl")], env_code, deadline, log, code)
         for mode in spec.get("ablations", ["none"]):
             _run(infer + ["--splits", POLICY["data"]["ablation_split"], "--image-mode", mode,
-                          "--out", str(pred / f"{mode}.jsonl")], env_code, deadline, log)
+                          "--out", str(pred / f"{mode}.jsonl")], env_code, deadline, log, code)
         evaluate_experiment(args.exp)
     except Exception as e:  # noqa: BLE001
         state, reason = "failed", f"{type(e).__name__}: {e}"
@@ -492,7 +494,7 @@ def op_final_eval(args) -> None:
     cmd += ["--lora", lora] if lora else []
     t0 = now()
     ledger_append({"event": "job", "exp": args.exp + ":final", "start": t0, "budget_hours": 1.0})
-    subprocess.run(cmd, env=env, check=True, timeout=3 * 3600)
+    subprocess.run(cmd, env=env, cwd=code, check=True, timeout=3 * 3600)
     recs = ledger()
     recs[-1]["hours"] = round((now() - t0) / 3600, 3)
     LEDGER.write_text("".join(json.dumps(r) + "\n" for r in recs))
