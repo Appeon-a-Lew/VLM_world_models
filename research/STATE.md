@@ -41,7 +41,13 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 
 ## Queue
 1. exp002_zeroshot_qwen3d_rerun: done (0.722 GPU h), reported; post-review AMEND adopted.
-2. exp003_exp000_diag_eval (IDEA-017): planner drafting the spec. After it: IDEA-025/026, IDEA-006, IDEA-002. Zero-shot follow-ups IDEA-024/028/032 are triggered, but they are diagnostics of the zero-shot pipeline, not of the primary objective.
+2. exp003_exp000_diag_eval (IDEA-017 + IDEA-006 ownstatic ride-along): running since 2026-10-24 (commit 6cec893; pre-review APPROVE round 2).
+   - Hypothesis: elevation drives exp000's config failure. Verdict order: FALSIFIED → SUPPORTED → PARTIAL → INCONCLUSIVE.
+   - Reproduction must hold first (primary 0.3136 ± 0.005, val_id 0.155 ± 0.005).
+   - Fetch the log with `log … 400`.
+   - Post-review notes: flag point-estimate-only R_f calls in the verdict sentence; the R_f interval accounts only for numerator noise.
+
+   After it: IDEA-025/026, IDEA-006, IDEA-002. Zero-shot follow-ups IDEA-024/028/032 are triggered, but they are diagnostics of the zero-shot pipeline, not of the primary objective.
 3. Cheap diagnostics from the exp000 review (IDEA-006/007/008), mostly analysis or tooling, not GPU. IDEA-009 done by human; IDEA-017 unblocked (diag splits exist; exp000 numbers need an eval_only spec with the exp000 adapter).
 
 ## Tooling (human, 2026-10-24)
