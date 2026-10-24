@@ -100,6 +100,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: Task A/B targets become the pixel centre (Qwen 0–1000 grid) plus the centre depth z in metres. Camera xyz is computed with K for scoring (metrics unchanged).
 - expected: lower Task A error on val_ood_config, since 2D pointing is native to Qwen3-VL and less viewpoint-tied. The error also splits into 2D and depth parts.
 - cost: prompt/target and parser change plus 1 SFT run (about 1.4 GPU h)
+- evidence (researcher, 2026-10-24): Cube R-CNN uses the same parameterisation, projected 2D centre plus depth back-projected with known K (research/literature/2023_omni3d_cube_rcnn.md, §4.1). Equation-anchored tool use (research/literature/2026_camera_robust_3d_tooluse.md, Table 3) shows that at fixed K, adding depth + K to Qwen3-VL-8B raises Det F1 from 38.43 to 44.13 and Ground from 50.13 to 55.17. Caveat from the same note: back-projection fixes the camera-frame centre, but Task B dynamics on the table plane still depend on elevation, so for val_ood_config Task B pair this with IDEA-016/021.
 - status: proposed
 
 ## IDEA-015 Depth-lookup oracle for Task A (diagnostic)
@@ -107,6 +108,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: eval-only, on IDEA-014 outputs. Replace the predicted z with `depth_t0` at the predicted (u, v), plus a half-extent offset along the ray.
 - expected: tells whether the val_ood_config failure is in 2D localisation or in metric depth
 - cost: about 0.5 day, no training
+- note (researcher, 2026-10-24): research/literature/2026_camera_robust_3d_tooluse.md (§3.2) samples ≤ 5 valid pixels inside the object mask (depth < 0.1 m discarded) and averages them. That is more robust than a single pixel at the predicted (u, v). We have GT masks, so use the median `depth_t0` over the mask pixels nearest the predicted point. At 1.0× the paper's GT vs UniDepthV2 depth gap is small (Det 44.90 vs 44.13), which supports a later predicted-depth variant.
 - status: proposed
 
 ## IDEA-016 Camera pose in the prompt
@@ -137,6 +139,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: at training time, random crop and resize (scale 0.6–1.0, random offset). Update fx, fy, cx, cy in the prompt. The camera-frame targets are unchanged by a crop.
 - expected: K is currently constant, so the model can ignore it and memorise a pixel→metric map. Varying K forces use of projective geometry, which should help on val_ood_config. Small ID cost.
 - cost: data-loader change plus 1 SFT run (about 1.4 GPU h)
+- evidence (researcher, 2026-10-24): (1) research/literature/2026_camera_robust_3d_tooluse.md (Tables 1-2): RGB-only Qwen3-VL-8B "overfit[s] to a canonical training intrinsic". Det F1 is 10.75 / 38.20 / 15.05 at K × 0.5 / 1.0 / 1.5, so exp000 (one K) should be at least as brittle. Even with explicit K + depth, only 38-47% of the score is retained under shift, so crops with text K alone are unlikely to make the model fully K-equivariant. (2) research/literature/2023_omni3d_cube_rcnn.md (Table 1, §4.2): scale augmentation gives +3.1 AP3D only together with a K-consistent depth target (virtual depth z·H/f), and the text reports it as harmful without one. If IDEA-019 is run, consider a control arm whose depth target is virtual depth z·H/f′ (f′ = the crop's focal), converted back analytically, so the model never has to read K from text. (3) Neither paper studies elevation or extrinsic shift. val_ood_config has fixed K, so this is not evidence that 019 helps the primary metric. Its evaluation counterpart is IDEA-027.
 - status: proposed
 
 ## IDEA-020 Scalar metric-depth sinusoidal PE on visual tokens (cheap rung below IDEA-013)
@@ -173,6 +176,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: analysis of exp001 val_id Task A outputs, no GPU. (i) Project the predicted and GT centres with K and report the pixel error separately from the depth (z) error. (ii) Fit one global depth scale s (z_gt ≈ s·z_pred) and per-axis sign/scale, then report the error after correction.
 - discriminates: s ≈ 1.07 with a large error drop points to a Cube R-CNN/Omni3D virtual-depth convention (f_v = H_v = 512 vs our f/H ≈ 1.072), which is fixable post hoc. A small pixel error with a large z error means metric depth fails (→ IDEA-014/015). A large pixel error means poor 2D grounding of small primitives (→ IDEA-004). A sign flip on an axis would mean a frame-convention bug, although the cookbook projection says Qwen uses the same OpenCV frame as us.
 - cost: about 0.5 day, no GPU. Needs the exp001 pred file; if `agent.sh` cannot read it, run it as a read-out inside a worktree eval job.
+- refinement (researcher, 2026-10-24, research/literature/2023_omni3d_cube_rcnn.md): Cube R-CNN-style virtual depth (f_v = H_v) amounts to a virtual camera whose focal is H in original pixels. Under it, X_v = X and Y_v = Y, and only z is rescaled: z_v = z·H/f. For our K (fy ≈ 480.4, H = 448) the virtual-camera hypothesis therefore predicts z_gt ≈ 1.072·z_pred with **x and y scales ≈ 1**, a fitted uniform xyz scale would point to something else. A test with no fitting: project the predictions with K_v (fx = fy = 448, cx = cy = 224) and with our K. Under the hypothesis, K_v gives the lower pixel error, and with our K the pixels are over-scaled radially by ~1.072 about (224, 224). Decision rule: report raw outputs as the exp001 primary. Report the z×1.072 variant only as a labelled post-hoc diagnostic, and only if both tests agree. The bias is ≤ ~0.09 m at our depths, so it cannot explain a ~0.7 m error. It does not apply to SFT models (constant K is absorbed).
 - status: proposed
 
 ## IDEA-025 Counterfactual impulse scaling (action-dependence test)
@@ -187,4 +191,12 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: eval-only with the exp000 adapter, in the same job as IDEA-025. Swap the direction phrase in the action text to its opposite (left↔right, away↔toward) and keep the image and impulse fixed. Report the fraction of targets whose predicted displacement, projected on the *stated* camera-frame direction, is positive: original vs flipped prompt.
 - discriminates: ≳90% sign agreement after the flip means the model reads the action direction. Lower agreement means it infers the direction from the scene layout. That is a scene-prior shortcut, plausible because `aim_at_other_prob: 0.4` makes "toward another object" guessable from the image.
 - cost: about 0.05 GPU h on top of IDEA-025
+- status: proposed
+
+## IDEA-027 Test-time intrinsics-shift eval (crop-zoom val_id, K rewritten in the prompt; diagnostic)
+- source: research/literature/2026_camera_robust_3d_tooluse.md
+- change: eval-only with the exp000 adapter. Centre-crop the val_id t=0 image by c ∈ {0.8, 0.67}, resize back to 448×448 (effective fx = fy scaled by 1/c, i.e. 1.25× and 1.5×; cx = cy = 224 unchanged), and rewrite fx, fy in the prompt. The GT camera-frame targets are unchanged by a crop. Single change: test image + K text. Write the results to a separate pred file (e.g. `pred/kzoom125.jsonl`), never to `normal.jsonl`.
+- discriminates: Task A error close to the uncropped val_id level means the model reads K or reasons projectively. A large drop with z_pred·(1/c) ≈ z_gt means it memorised one pixel→metric map and reads depth off apparent size. Jiang et al. report RGB-only Qwen3-VL-8B keeping only 28% of its Det F1 at K×0.5 (Table 1). It is the baseline any IDEA-019 run must beat, and a direct test of whether text K is used (the supervisor's text-vs-scene concern, on the geometry side).
+- cost: worktree infer option (crop + K rewrite), about 0.1 GPU h. Zoom-out (c > 1) would need re-rendering with a different fovy (op_gen config, human), so only zoom-in is proposed.
+- priority note: K is fixed in every val split including val_ood_config, so this does not bear on the primary metric. Run it only together with, or just before, IDEA-019.
 - status: proposed
