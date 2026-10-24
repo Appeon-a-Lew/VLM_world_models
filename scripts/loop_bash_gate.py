@@ -24,8 +24,9 @@ ROOTS = (REPO, WT)
 SAFE_SIMPLE = {"ls", "cat", "head", "tail", "grep", "wc", "uniq", "diff", "jq", "cut", "tr",
                "echo", "pwd", "date", "basename", "dirname", "realpath", "test", "true", "sort"}
 GIT_SAFE = {"status", "diff", "log", "show", "add", "commit", "rev-parse", "ls-files", "grep"}
-SAFE_REDIRECT = re.compile(r"\s(?:[12]?>\s*/dev/null|2>&1)(?=\s|$)")
+SAFE_REDIRECT = re.compile(r"\s(?:[12]?>\s*/dev/null|2>&1)(?=[\s;&|]|$)")
 SEP = {"&&", "||", ";", "|"}
+PROC_SUB = re.compile(r"<\(([^()]*)\)")
 
 
 def within(path, cwd, roots=ROOTS):
@@ -135,6 +136,13 @@ def seg_ok(seg, cwd):
 def decide(cmd, cwd):
     if "$(" in cmd or "`" in cmd or "<<" in cmd:
         return False
+    subs = PROC_SUB.findall(cmd)
+    if subs:
+        # <(inner) is fine when inner passes on its own. Only without any cd, so the
+        # cwd the inner command is checked against is the one it really runs in.
+        if re.search(r"(^|[;&|\s])cd\s", cmd) or not all(decide(s, cwd) for s in subs):
+            return False
+        cmd = PROC_SUB.sub(" /dev/fd/63 ", cmd)
     segs = segments(cmd)
     if not segs:
         return False

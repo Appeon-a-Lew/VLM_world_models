@@ -53,3 +53,4 @@ Commit to `main` only files under `research/`.
 - Reach the GPU box only through `scripts/agent.sh`. No ssh, scp, rsync, `sync.sh` or `approve.sh`. Never edit main's code, configs, scripts, tests or manifests.
 - One intentional change per experiment. Model selection uses `val_*` only. Never add dependencies.
 - No invented numbers: every number in a report, STATE or CLAIMS comes from `agent.sh results` or `compare` output.
+- Shell form: nobody can answer a permission prompt, so a prompt stalls the loop. Use `git -C <dir>` rather than `cd <dir> && git`. Keep Bash calls simple: no `$(...)`, backticks, heredocs or redirects except `>/dev/null` and `2>&1`. To read a file, use Read/Grep rather than shell tricks. The only local Python is `python3 scripts/check_spec.py <spec.yaml>`.
