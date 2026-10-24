@@ -92,6 +92,12 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 ## IDEA-002 Predict the displacement instead of the absolute future position
 - source: Phase 1 design. Absolute targets mix perception error and dynamics error.
 - change: Task B answers both the current centre and `delta` = p(t=1) − p(t=0); the scored position is the model's own current centre + delta (never the GT t=0 position, which would leak)
+- note (researcher, 2026-10-24, research/literature/2024_physics_context_builders.md):
+  - This is the single-model, single-pass analogue of Physics Context Builders (perception text, then reasoning). The model writes its own Task A-style perception into its context before generating the dynamics tokens.
+  - PCB evidence favours keeping it end-to-end. In-distribution, the end-to-end SFT 3B model beats every PCB-augmented GPT-4o/Gemini arm (CLEVRER 92.9/98.2/88.7 vs best PCB 75.6/70.8/68.4; tower stability sim 87.6 vs ≤ 85.1; Tables 1, 2, 4, 5). On the only OOD test (20 real images) neither route wins consistently.
+  - Do not build a separate two-stage pipeline in which exp000's Task A answer is pasted into its Task B prompt. That prompt is off-distribution for the exp000 adapter, so a null result would be uninterpretable.
+  - Format requirement: emit the full current-centre block *before* the deltas, so the oracle-prefix diagnostic IDEA-033 can be run on the same adapter.
+  - The PCB evidence is conditional. Decomposition helped mainly where the consumer lacked perception, and predictive questions were never tested. It supports 002 as a dynamics lever (forces, or a factor with SFT-B ≈ own-static in exp003), not as a config/perception fix.
 - status: proposed
 
 ## IDEA-003 Task mix ablation: Task B only vs A + B
@@ -312,6 +318,21 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - risk:
   - The token choice matters. Pool over the 2×2 merged-token neighbourhood as a robustness check.
   - Probes fit on train elevations (30-60°) may themselves extrapolate poorly to 12-25°. Also report a probe fit on half of val_diag_elev and tested on the other half: it separates "information absent" from "linear map changes with viewpoint".
+- protocol refinement (researcher, 2026-10-24, research/literature/2025_pixels_to_principles_probing.md). Ballout et al. 2025 is the readable probing paper. It covers Qwen2.5-VL 3B/7B/72B (no Qwen3-VL) and binary plausibility labels only: no continuous position or depth, no layer sweep, an MLP probe despite the "linear" wording, a single 80/10/10 split, and **no controls**. Its one usable regularity: vision embeddings before projection ≥ after projection > LLM final layer, in all nine models (Insights 3, 5). Concretely:
+  - **Sites (5)**:
+    - ViT last block, before the merger; 2×2-pool the 16-px patches onto the merged grid (verify the patch size in the processor config);
+    - merger output, i.e. the LLM input embedding;
+    - the first LLM layer after the DeepStack injection layers (check `deepstack_visual_indexes`);
+    - the middle LLM layer;
+    - the last LLM layer.
+    - Read every site at the object's merged-token position(s), with the 2×2 neighbourhood as the robustness variant.
+    - **No whole-sequence mean pooling** (Ballout's choice), since it erases per-object location.
+  - **Prompt invariance**: the image precedes the text (`physwm/vlm/prompts.py:82`), so under causal attention the visual-token states do not depend on the Task A vs Task B prompt or the action line. One pass serves both tasks, but these probes measure t=0 perception only.
+  - **Controls** (all cheap):
+    - (i) *Selection leakage*: the token is chosen by the projected GT centre, so the choice leaks (u, v). Fit a ridge on the token's grid (row, col) alone, and the main ridge on **blank-image** features at the same positions (+1 forward pass on blank images, about 0.02 GPU-h). Report the main probe's gain over both per axis, with **z as the headline axis**.
+    - (ii) *Shuffled targets*: permute xyz across training objects and refit. The held-out error must match the predict-train-mean baseline; if it is lower, there is leakage.
+    - (iii) Split train/test **by episode**. Choose λ by 5-fold CV inside `train` only. Use about 2× feature-dim objects (hidden size ≈ 2k for the 2B; verify) or PCA to 256 dims first.
+  - **Report**: per split, held-out metric error and R² vs the predict-train-mean baseline, next to exp000's generated Task A error on the same objects.
 - status: proposed
 
 ## IDEA-031 Latent-property error floor for Task B (derived baseline, no GPU)
@@ -344,4 +365,19 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
   - The gap grows on count/elev → a genuine factor effect for this pipeline.
   - Hungarian ≪ label-matched under normal → misassignment, which favours IDEA-004 over frame fixes.
 - cost: about 0.5 day of code, < 0.05 GPU-h. It can share a job with IDEA-024/028.
+- status: proposed
+
+## IDEA-033 Oracle-perception prefix forcing on an IDEA-002 model (dynamics-only diagnostic)
+- source: research/literature/2024_physics_context_builders.md
+- background: Physics Context Builders never reports a GT-description oracle or a description-without-image arm, so it cannot separate perception error from reasoning error. An IDEA-002 model whose Task B answer lists the current centres before the deltas allows exactly that separation, with no extra training.
+- depends on: IDEA-002 trained with the answer order [current-centre block, then deltas].
+- change: eval-only, single change at decode time.
+  - Pre-fill the assistant answer with the GT t=0 current-centre block (same JSON format as training), then let the model generate only the deltas. Score `GT t0 + Δ̂`.
+  - Write `pred/oracleprefix.jsonl`, plus a blank-image variant `pred/oracleblank.jsonl`. Both stems match `[a-z]*` for `compare`. Never write to `normal.jsonl`; this is privileged and diagnostic only.
+- discriminates (per split, paired CIs via `compare`):
+  - oracleprefix vs `static`: both use oracle perception, so the difference is the learned dynamics skill alone. A null on val_ood_forces means the predicted displacements add nothing beyond staying put. Pair it with IDEA-025/026 to tell an action-blind prior from no dynamics at all.
+  - normal vs oracleprefix: how much of the Task B error comes from the model's own perception. A large gap on val_ood_config means perception carries the config failure, which points to geometry levers (IDEA-016/014/020).
+  - oracleblank vs oracleprefix: ≈ 0 means the dynamics step reads only the coordinates and the action, not the scene. This is a Task B-specific image-dependence test that the none/blank/swap ablations cannot isolate, because they break perception too.
+- cost: about 0.5 day of code (assistant-prefix forcing in worktree infer.py), about 0.15 GPU-h after IDEA-002's SFT.
+- risk: the forced prefix uses GT, so the model never has to be consistent with its own (possibly wrong) centres. Report it only as a labelled oracle, never as a model result.
 - status: proposed
