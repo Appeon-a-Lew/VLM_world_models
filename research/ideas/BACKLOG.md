@@ -3,6 +3,16 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
+## Ranking (planner, 2026-10-25, round 5, re-rank only, no new spec)
+Inputs: IDEA-037..042 (V-JEPA, SFT-vs-RL, Thinking in Space, Depth Anything V2). exp005 (repro) is running; exp004 follows on its adapter.
+Top 5:
+1. IDEA-034 + 035 (planned: exp004_exp000_oracle_anchor): still the highest info per GPU-h; runs right after exp005.
+2. IDEA-040 training-answer prior baseline: no GPU, runs now while exp005 trains. Bounds how much of exp000's val_id and forces gain is image-free (links to IDEA-008, 025). Risk: camera-frame prior is weak, so only a floor.
+3. IDEA-026 then 025 counterfactual actions on exp000 (~0.15 GPU-h each): tests whether the forces gain (78% of aggregate) uses the action. Needs the exp005 adapter.
+4. IDEA-014 (u, v, depth) output (1.4 GPU-h): first geometry lever, conditional on exp004 R1/R2.
+5. IDEA-002 displacement output (1.4 GPU-h): conditional on exp004 R3 or on 025/026 showing the action is ignored.
+Next: IDEA-042 (DA-V2 vs elevation, replaces the DA half of 022), IDEA-041 (blind-trained arm, after 040 shows whether needed), IDEA-037 (likelihood margin), IDEA-036 (data side done; eval needs exp005 adapter), IDEA-038 (needs a retrain, so it cannot ride on exp005 now), IDEA-039 (low, days of engineering).
+
 ## Ranking (planner, 2026-10-24, round 4; spec: exp004_exp000_oracle_anchor)
 Inputs: exp003 report + review_post (AMEND adopted), CLAIMS C-005..C-008, literature notes 2025_pixels_to_principles_probing and 2024_physics_context_builders, exec.py / metrics.py (current main), exp003 worktree infer.py / derived.py.
 
