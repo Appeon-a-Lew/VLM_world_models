@@ -99,8 +99,10 @@ success_criterion:
     split order and batch size 32 should give an exact match (compare diff 0.0000). REPRODUCED if all
     of the following hold:
     (i) |metrics.json value - 0.3136| <= 0.005;
-    (ii) `compare exp003_exp000_diag_eval exp000_sft_baseline` (default splits) has |diff_a_minus_b| <= 0.005
-    and every |per_split_diff| <= 0.010;
+    (ii) `compare exp003_exp000_diag_eval exp000_sft_baseline --splits val_id val_ood_objects
+    val_ood_forces val_ood_config` has every |per_split_diff| <= 0.010 (val_id included, since D_val_id
+    is the reference for every S_f and R_f), and |metrics.json val_id_target_mean - 0.155| <= 0.005
+    (exp000's val_id target, report.md / STATE, 3 d.p.);
     (iii) `compare exp003_exp000_diag_eval:none exp000_sft_baseline:none --splits val_id` has
     |diff| <= 0.010, and image_dependence_gap is within 0.331 +/- 0.010;
     (iv) results.md Task A all_mean on val_id and val_ood_config is within 0.005 of 0.016 and 0.136.
@@ -139,6 +141,20 @@ decision_criteria:
     (4) none implicated and R_elev + R_count + R_corner < 0.75: "interaction". The single factors do
     not reproduce the failure.
     (5) none implicated and the sum >= 0.75: "diffuse". Small additive contributions, no single lever.
+  hypothesis_verdict: >
+    Evaluated only if reproduction (i)-(iv) and the precondition hold. If the precondition fails, no
+    verdict is given. Exactly one applies; check them in this order, and the first match wins
+    (FALSIFIED first, so the hypothesis's own falsification clause takes precedence):
+    FALSIFIED = R_elev < 0.5, or max(R_count, R_corner) > R_elev.
+    SUPPORTED = outcome (1) or (2) with f = elev, and R_corner <= 0.25.
+    PARTIALLY SUPPORTED = elev implicated and R_elev is the largest R_f, but R_corner > 0.25.
+    INCONCLUSIVE = anything else (e.g. R_elev >= 0.5 and largest but not CI-separable from val_id).
+  r_f_intervals: >
+    Reporting only, not part of the verdict. R_f is a ratio of noisy differences, so the report also
+    gives a conservative interval for each R_f from the C1 CI endpoints: S_f in
+    [D_f lo - D_val_id hi, D_f hi - D_val_id lo], divided by S_cfg (point estimate). Any call (largest
+    R_f, R_f >= 0.5, R_corner <= 0.25) whose interval crosses its threshold is flagged
+    "point-estimate only".
   mechanism_readouts: >
     Secondary. They are reported for every diag split and used for routing, not for the verdict.
     (a) Perception share P_f = (A_f - A_val_id) / (A_val_ood_config - A_val_id), with A = results.md
@@ -163,10 +179,11 @@ decision_criteria:
 
 report_must_quote:
   - "agent.sh results: metrics.json; results.md rows for :normal, :ownstatic and :none on all splits (Task A and B)"
-  - "agent.sh log: every stats line, i.e. 7 splits x 2 tasks for mode=normal plus val_id x 2 tasks for mode=none.
+  - "agent.sh log exp003_exp000_diag_eval 400 (the default 40 lines would cut off the normal-mode lines):
+     every stats line, i.e. 7 splits x 2 tasks for mode=normal plus val_id x 2 tasks for mode=none.
      If any is missing, the snapshot did not run and the run is invalid."
-  - "compare exp003_exp000_diag_eval exp000_sft_baseline (default) and --task A --splits val_id val_ood_objects
-     val_ood_forces val_ood_config; compare exp003_exp000_diag_eval:none exp000_sft_baseline:none --splits val_id"
+  - "compare exp003_exp000_diag_eval exp000_sft_baseline --splits val_id val_ood_objects val_ood_forces
+     val_ood_config, and the same with --task A; compare exp003_exp000_diag_eval:none exp000_sft_baseline:none --splits val_id"
   - "C1, C2 and C3 as defined in decision_criteria, plus the R_f / P_f / G_s table computed from them"
   - "compare exp003_exp000_diag_eval static (default) for the primary metric line"
   - "exp002 diag numbers may appear only in a context table labelled 'different model'; never as a criterion"
