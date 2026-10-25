@@ -717,3 +717,24 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: exp005 recipe, prompt without FRAME, center output.
 - discriminates: representation cost vs prompt-cue loss. Cheap (1.4 GPU-h) but low priority given R3/R4 default action.
 - status: proposed
+
+## IDEA-060 cf_flip / cf_impulse on val_ood_config and val_diag_elev (does the action reading survive the camera shift?)
+- source: review of exp009_exp005_cf_action
+- background: exp009 R1 is val_id only. exp006/007's LR/AT probe lives on config/elev, where the action text may be mapped worse (camera-frame confound, IDEA-050). A val_id result cannot show that AT labels still mean the right image axis at elevation 25+.
+- change: eval-only on the exp005 adapter, cf_flip with cfsign split per label (LR vs AT) on val_ood_config, val_diag_elev, val_diag_corner and val_ood_forces. Needs a human change of ablation_split or a new pinned mode.
+- discriminates: lexical token->direction mapping that is camera-invariant vs a camera-frame mapping that degrades with elevation; also whether forces-split displacement tracks the impulse (normal-pass print: non-sphere median dhat 0.215 vs GT 1.257).
+- status: proposed
+
+## IDEA-061 Dose-response and in-range impulse control (alpha 0.8/1.25 plus in-range subset)
+- source: review of exp009_exp005_cf_action
+- background: alpha 0.5/2 leave the training impulse range and round to 2 decimals (0.05 -> 0.03 = x0.6; one episode unchanged), so rise and slope mix dynamics with out-of-range text. Slope s = 1.10 has no CI.
+- change: eval-only: alpha in {0.8, 1.25} (stays in range) plus a bootstrap CI on s over episodes, per-episode regression of ln dhat on ln alpha.
+- discriminates: smooth monotone dose-response (dynamics-like) vs out-of-range text confusion; gives an s CI against the 0.8 threshold.
+- status: proposed
+
+## IDEA-062 Lexical vs semantic direction: paraphrased / synonymous action sentences
+- source: review of exp009_exp005_cf_action
+- background: the flip changes two token types (left/right, toward/away); the model may map these tokens to a displacement sign without grounded semantics.
+- change: eval-only: paraphrase ("to the camera's left", "leftwards", "in the -x direction"), non-axis wording, and flip in only one of {LR, AT}.
+- discriminates: token-level lookup vs semantic reading; informs whether IDEA-016 (camera pose text) can be expected to condition anything.
+- status: proposed

@@ -176,6 +176,7 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - Oracle path mixes separate Task A and Task B generations (unmoved error 0.010 m config vs 0.006 id; gate passed at 0.05 m).
   - Single adapter and seed. n_cont = 31 on val_id.
   - Extends but does not replace C-006 and C-007. The C-007 own-path perception/dynamics split is unchanged and still point-estimate only.
+  - **Update from exp009_exp005_cf_action (2026-10-25, review_post):** no C-010 number changes. On val_id only, the exp005 adapter reads the action text (C-012), so "the action is ignored" is not a reason for the exp006/007 nulls on val_id. Not shown: that action text is read correctly at the config / elevation shift, or that AT labels map to the camera frame (flip evidence is token-level and in-distribution camera). The exp006/007 nulls stay "underpowered, not refuted" (CI half-width about 0.04 m).
 
 ## C-011 Writing the Task A/B answer as pixel centre plus depth ([u, v, z], decoded with K) does not improve the exp005 recipe and is slightly worse (one seed, FRAME sentence removed in the same change)
 - **claim**: exp008 (uvz) has a higher val OOD Task B target mean than exp005, by +0.0104 [0.0041, 0.0165] (0.3264 vs 0.3160). Task A is worse on every shifted split (config 0.145 vs 0.137), so the output parameterisation is not the lever for the config perception error. Descriptive only: under uvz the 2D error is about 1 px everywhere and the median depth error is 0.128 m on config, 0.120 elev_corner, 0.078 elev, 0.082 corner against 0.012 on val_id.
@@ -186,3 +187,14 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - FRAME sentence removal is bundled with the format change; the effect cannot be attributed to the pixel representation alone.
   - Spec's real-episode pre-submit check waived; per-split missing rate and off-image fraction not verified. val_id Task A parity with exp005 argues the codec works.
   - The depth statement is medians from a print-only line, uvz only, no CI, no exp005 depth comparison (IDEA-057), so "depth carries the config error" is not a claim about the center format.
+
+## C-012 On val_id, the exp005 adapter's Task B answer is conditioned on the action text (direction and, roughly linearly, impulse), not only on the image
+- **claim**: Rewriting only the Task B action sentence (normal image) changes the answer in the direction the text says. Flipping the push direction mirrors the predicted displacement (sign vs GT 1.000 -> 0.012, size unchanged). Halving / doubling the impulse scales the median predicted displacement of non-sphere targets by 0.46 / 2.10 (log-log slope 1.10). Descriptive of the model's input use; the error rise vs the real GT is a sensitivity measure, not an accuracy.
+- **evidence**: exp009_exp005_cf_action (commit ffe8ee228b, 0.325 GPU-h), val_id Task B target, paired vs normal 0.157: cf_flip 0.417, rise +0.2595 [0.2354, 0.2849] (static 0.265); cf_impulse_0.5 0.213, +0.0556 [0.0435, 0.0695]; cf_impulse_2 0.194, +0.0368 [0.0170, 0.0563]. [cfdisp] median dhat non-sphere (n 263): 0.0430 / 0.0941 / 0.1972 (alpha 0.5 / 1 / 2), flip 0.0940. [cfsign] normal 1.0000, flip 0.0121, none (no image) 1.0000. Task A val_id under cf modes equals normal (flip diff +4.3e-5 [-1.0e-4, 2.0e-4]; impulse modes exactly 0). Primary 0.3160, parse 1.000.
+- **status**: tentative
+- **caveats**:
+  - val_id only; val_ood_forces/config action use not tested (normal-pass print on forces: non-sphere median dhat 0.215 vs GT 1.257, so any reading there is strongly under-scaled; unregistered).
+  - Gate 3 literally missed for cf_impulse_0.5 (n_changed 499/500); immaterial by bound but pre-registered routing is INC under the letter.
+  - Slope s = 1.10 has no CI; threshold 0.8; physics for sliding is 2, so magnitude is under-scaled. Alpha 0.5/2 are partly outside the training impulse range and quantised to 2 decimals.
+  - Flip evidence is token-level and cannot separate lexical mapping from camera-frame semantics.
+  - One adapter, one seed.

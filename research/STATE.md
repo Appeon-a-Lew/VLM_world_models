@@ -109,3 +109,6 @@ exp009_exp005_cf_action planned (IDEA-025+026, eval-only on the exp005 adapter, 
 
 ## exp008 findings (2026-10-25)
 uvz output (IDEA-014) not supported: primary 0.3264 (exp005 0.3160, +0.0104 [0.0041, 0.0165]); Task A worse on every shifted split, equal on val_id; routing inconclusive (R3/R4 overlap), uvz not adopted. Descriptive (uvz only): shifted-view Task A error is depth (median |dz| 0.012 m val_id -> 0.128 m config), 2D about 1 px. Caveats: real-episode pre-submit check waived; per-split missing rate and off-image fraction unverified. Open ideas: IDEA-057 (exp005 per-axis Task A), IDEA-058 (off-image/missing post hoc), IDEA-059 (center, no FRAME). Executor now nc-10-4-3; cf_flip/cf_impulse modes available, so IDEA-025/026 unblocked.
+
+## exp009 findings (2026-10-25)
+cf-action probe on the exp005 adapter, val_id only: flipping the direction raises Task B target error 0.157 -> 0.417 (+0.2595 [0.235, 0.285]); impulse x0.5/x2 raise it +0.056 / +0.037 (CIs above 0) and the median predicted displacement scales with slope 1.10 (physics 2). F-read + I-use -> R1, action used on val_id (tentative, C-012; gate-3 deviation 499/500 changed prompts). Removes "action ignored" for the exp006/007 nulls on val_id only; config/elev/forces untested (IDEA-060). Next per spec: IDEA-016; also IDEA-060 (cf on shifted splits, needs a human change to pinned ablation_split).
