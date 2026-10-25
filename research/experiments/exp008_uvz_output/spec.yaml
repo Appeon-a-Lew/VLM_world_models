@@ -75,13 +75,20 @@ success_criterion:
     elev_corner against exp005 (exp003 on exp000 for the diag Task A references above). Mechanism
     check: Task A val_ood_config <= 0.100 (drop >= 0.037, about the size needed for the perception share
     0.06 to show up in Task B) and the diag Task A drops are largest on elev and elev_corner (0.084,
-    0.122). Guard: forces Task B (0.510) and objects (0.161) must not worsen by more than 0.03 each.
+    0.122). Guard: forces Task B (exp005 0.515, limit 0.545) and objects (0.161) must not worsen by
+    more than 0.03 each.
     Per-split Task B CIs from compare --splits.
+  report_must_quote: >
+    Off-image fraction (u or v outside 0-1000) for Task B predictions and for GT, computed post hoc
+    from the pred files or the log; route R4 needs it.
   image_dependence: >
     Gap = none minus normal on val_id Task B target (exp005 0.343); also swap minus normal (exp005
     0.249). Gap in [0.30, 0.40] means similar image use; below 0.25 means the uvz model leans on the
     image less (flag, does not itself fail). Do not use blank. Both none and swap must stay worse than
     static 0.265 on val_id (C-001) to say image dependence is retained.
+    Caveat: the none-mode gap is not strictly like-for-like with exp005, because the uvz prompt text
+    differs (FRAME sentence and format line), so the text-only prior differs. A gap change under 0.05
+    versus exp005 is not interpreted.
   routing:
     R1_supported_and_mechanism: >
       Primary <= 0.311 and config Task A <= 0.100: perception representation is a lever. Adopt uvz as
@@ -99,6 +106,18 @@ success_criterion:
       Validity gate fails, or primary > 0.321 with val_id Task A fine: uvz hurts the dynamics answer
       (Task B after a push may leave the image, u/v outside 0-1000, off-table fall). Inspect the
       depth-vs-2D print lines and the off-image fraction before any further uvz work; drop IDEA-014.
+    inconclusive: >
+      Any combination falling in no route above, reported verbatim as "inconclusive" and not
+      retro-fitted into a route. Known cases: primary <= 0.311 with config Task A > 0.100; config
+      Task A in (0.100, 0.120] with primary comparable; primary in (0.311, 0.321) with CI not
+      excluding 0; primary > 0.321 with config Task A > 0.120 (R3 and R4 overlap, report both
+      readings). Default action: report, do not adopt uvz as the new base, and go next to IDEA-002,
+      or to the IDEA-025/026 request if the dynamics half looks like the bottleneck.
+  confound_note: >
+    The FRAME-sentence removal and the output-format change are bundled (the xyz frame sentence is
+    meaningless for uvz) and cannot be separated by this run. If R1 or R2 fires, any gain cannot be
+    attributed to the pixel representation alone; a center-style run with the FRAME sentence removed
+    is then needed (add to backlog).
   objective_link: >
     Tests the perception half of the val_ood_config loss (exp004 Shapley about 0.060 of 0.140) by a
     representation that does not depend on the camera elevation as an output, and keeps the image-
