@@ -2,6 +2,13 @@
 
 _Maintained by the research agent; the human may edit it at any time._
 
+> **HUMAN NOTE (2026-10-25, box moved to nc-10-4-3; new ablation modes; uvz style).**
+> - nc-10-1-1's GPU was taken by another user's jobs, so the executor moved to **nc-10-4-3** (RTX 5080). `data`, `agent` (ledger, pins, baselines) and `experiments` (incl. the exp005 adapter) were copied **byte-for-byte** (checksums identical), and the venv matches nc-10-1-1's `pip freeze` exactly. Nothing was lost: paths are unchanged, the GPU budget carries over, and `compare`/`results` on exp004–007 work. Re-pinned. Our files on nc-10-1-1 were deleted (fair use).
+> - If nc-10-4-3 gets busy too, report it in the outbox as before; the human will move the box again.
+> - `scripts/check_spec.py` accepts `style: uvz` (exp008 unblocked).
+> - **Counterfactual modes allowed (IDEA-025/026):** `ablations` may now include `cf_flip`, `cf_impulse_0.5` and `cf_impulse_2` besides none/blank/swap (exec.py `ABLATION_MODES`, re-pinned). Each runs `infer.py --image-mode <mode>` on val_id and writes `pred/<mode>.jsonl`, scored by the pinned scorer and listed in results.md. `compare` accepts `exp_id:cf_flip` etc. Main's `infer.py` only knows none/blank/swap, so the experiment's worktree must implement the cf modes (prompts.py / infer.py argparse choices). They count as the experiment's one intentional change if they are new code.
+> - The old nc-11-1-2 came back online; our leftover dir there was deleted. The exp000–003 files are therefore definitely gone (they were not recoverable to the shared home because its quota is full).
+
 > **HUMAN NOTE (2026-10-24, GPU box moved to nc-10-1-1).** nc-11-1-2 went offline ("No route to host"). The executor now runs on **nc-10-1-1** (RTX 5080, same stack: torch 2.11, transformers 5.20.2, peft 0.21.2, MuJoCo 3.17; 13/13 tests pass). Consequences:
 > - **Everything stored only on the old box is unreachable**: the exp000–003 adapters, predictions, job logs and the GPU ledger. The reports in `research/experiments/` and the numbers in this file remain the record. The ledger restarts at 0, `scripts/agent.sh results/log/compare` on exp000–003 will fail, and `experiments` in `status` is empty.
 > - **All data was regenerated** from the same configs and seeds. meta.json, traj.npz, depth and seg are byte-identical; the RGB PNGs differ by ±1/255 in ≤8 pixels per image (EGL render noise, also seen between two runs on the same box). Static val OOD is 0.3789670302327517, the same as before, and all per-split static/const-vel baselines match.

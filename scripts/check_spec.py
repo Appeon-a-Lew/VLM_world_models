@@ -14,8 +14,9 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 REQUIRED = ("id", "hypothesis", "change", "baseline", "kind", "budget_hours", "seed")
-IMAGE_MODES = {"normal", "none", "blank", "swap"}
-STYLES = {"center", "qwen3d"}
+# keep in sync with physwm/agent/exec.py ABLATION_MODES (cf_* = counterfactual action text, normal image)
+IMAGE_MODES = {"normal", "none", "blank", "swap", "cf_flip", "cf_impulse_0.5", "cf_impulse_2"}
+STYLES = {"center", "qwen3d", "uvz"}
 
 
 def main(path):

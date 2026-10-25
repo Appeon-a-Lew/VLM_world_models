@@ -27,11 +27,11 @@ Phase 1 is a small, rigorously evaluated baseline. It compares trivial baselines
 | ood_config | `sim_ood_config.yaml` | 4 000 000+ | 4–5 objects clustered at a table corner, low camera |
 
 ## Running (TUM lab machines)
-The code sits in the NFS home (`~/adl4cv-worlmodels`, synced via `scripts/sync.sh`). The venv, data, HF cache and runs live on the machine's local disk under `/var/tmp/toyi/wm`. Currently that is **nc-10-1-1** (moved from nc-11-1-2 on 2026-10-24 after it went offline).
+The code sits in the NFS home (`~/adl4cv-worlmodels`, synced via `scripts/sync.sh`). The venv, data, HF cache and runs live on the machine's local disk under `/var/tmp/toyi/wm`. Currently that is **nc-10-4-3** (nc-11-1-2 until it went offline on 2026-10-24, then nc-10-1-1 until another user's jobs took its GPU on 2026-10-25). To move, copy `$WM/{data,agent,experiments}` byte-for-byte to the new box, build the venv from the old box's `pip freeze`, re-pin, and delete `/var/tmp/toyi/wm` on the old box. The NFS home has a 50 GB quota that is nearly full, so never stage data there.
 
 ```bash
 scripts/sync.sh                                   # laptop -> halle
-ssh nc-10-1-1
+ssh nc-10-4-3
 source ~/adl4cv-worlmodels/scripts/env.sh         # venv, HF_HOME, MUJOCO_GL=egl, cd repo
 python -m pytest -q tests                         # geometry, sim sanity, parser
 bash scripts/gen_all.sh                           # ~15 min, ~1.6 GB

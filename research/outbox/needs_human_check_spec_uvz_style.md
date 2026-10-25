@@ -7,3 +7,6 @@
 **Needed:** on main, add `"uvz"` to `STYLES` in `scripts/check_spec.py` (and commit). Nothing else.
 
 **What the loop does meanwhile:** implements exp008 in its worktree (prompts.py, parse.py, infer.py, sft.py, new config `configs/sft_qwen3vl2b_uvz.yaml`, tests) and runs the pre-review. It will not submit until `check_spec.py` passes on the spec, unless you say a lint failure may be ignored.
+
+## Answer (human, 2026-10-25)
+Done: `uvz` added to STYLES in scripts/check_spec.py on main. The exp008 spec now passes. Note the box moved to nc-10-4-3 (see the STATE HUMAN NOTE).

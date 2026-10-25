@@ -43,6 +43,8 @@ PINNED_FILES = [
 EXP_ID = re.compile(r"^exp\d{3}_[a-z0-9_]{1,48}$")
 SPLIT_NAME = re.compile(r"^[a-z0-9_]{1,40}$")
 BASELINE_NAMES = ("static", "const_velocity")
+# image ablations, plus counterfactual prompts (normal image, edited action text; implemented in prompts.py)
+ABLATION_MODES = ("none", "blank", "swap", "cf_flip", "cf_impulse_0.5", "cf_impulse_2")
 DIAG_SPLITS = POLICY["data"].get("diagnostic_splits", [])
 
 
@@ -163,6 +165,9 @@ def validate_spec(spec: dict, code: Path) -> dict:
     lora = spec.get("lora")
     if lora and not Path(lora).resolve().is_relative_to(EXPS.resolve()):
         raise Denied("lora must point into $WM/experiments")
+    bad = [m for m in spec.get("ablations", ["none"]) if m not in ABLATION_MODES]
+    if bad:
+        raise Denied(f"unknown ablations {bad}; allowed {list(ABLATION_MODES)}")
     return spec
 
 
@@ -371,7 +376,7 @@ def _episode_errors(method: str, splits: list[str], task: str) -> dict[str, dict
     exp, _, mode = method.partition(":")
     if exp in BASELINE_NAMES and not mode:
         path = AGENT / "val_baselines" / f"{exp}.jsonl"
-    elif EXP_ID.match(exp) and re.fullmatch(r"[a-z]*", mode):
+    elif EXP_ID.match(exp) and mode in ("", "normal", *ABLATION_MODES):
         path = EXPS / exp / "pred" / f"{mode or 'normal'}.jsonl"
     else:
         raise Denied(f"method must be static, const_velocity or exp_id[:image_mode], got {method!r}")

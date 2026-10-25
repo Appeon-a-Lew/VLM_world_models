@@ -29,7 +29,7 @@ permissions:
   send_external_messages: approval
 
 resources:
-  host: nc-10-1-1
+  host: nc-10-4-3
   max_concurrent_gpu_jobs: 1
   small_experiment_max_hours: 3
   large_experiment_max_hours: 24
