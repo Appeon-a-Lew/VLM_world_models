@@ -623,3 +623,28 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: roughly 0.5 day CPU, no GPU.
 - risk: overlaps IDEA-006 and IDEA-033 in spirit (those use VLM outputs or static); the ball-off-table cases may dominate the mean, so report medians. Camera-frame vs table-frame input matters at config.
 - status: proposed
+
+## IDEA-050 Direction-split and error-rotation read-out on the exp004 oracleanchor path (camera-frame confound test)
+- source: review of exp004_exp000_oracle_anchor
+- background: actions are camera-relative (left/right/away/toward, configs/sim_train.yaml:31). left/right pushes are mostly along camera x, which does not depend on elevation; away/toward pushes mix camera y and z with an angle set by elevation (train 30-60 deg, config 12-25 deg). The model gets intrinsics but no elevation in the prompt.
+- change: CPU-only, no GPU. On the existing exp004 oracleanchor.jsonl and GT, recompute K_iso per action direction (left/right vs away/toward) on val_id, val_diag_elev and val_ood_config, and split the oracle-path displacement error into along-push and cross-push components. Also report iso absolute error (not K) with a paired CI.
+- discriminates: camera-frame confound (loss on away/toward only, cross-push error, grows with elevation gap) versus a general dynamics or magnitude shortfall (loss on left/right too). It picks between IDEA-016 / a table-frame output and IDEA-002 before any 1.4 GPU-h run.
+- cost: minutes of CPU; preds are on the box under /var/tmp/toyi/wm/experiments/exp004_exp000_oracle_anchor/pred/.
+- risk: needs the action direction per episode from episode metadata (read-only).
+- status: proposed (rank first)
+
+## IDEA-051 Diag-split strata K with CIs, and the 3-way interaction check
+- source: review of exp004_exp000_oracle_anchor
+- background: iso K on config is 0.217, but elev alone 0.337, corner alone 0.444, count alone 0.444, elev_corner roughly 0.38 (from rounded results.md). No single factor or pair reproduces config, so the factors interact, or the config iso set is a different regime (target displacement 0.103 vs 0.137).
+- change: CPU-only: `compare` on isoanchor/contanchor/offanchor for val_diag_elev_corner and the diag splits with full CIs, rescaled as in the spec. Add per-stratum absolute errors for every split.
+- discriminates: interaction vs a smaller-displacement denominator effect (iso absolute oracle error is 0.071 m on val_id vs 0.081 m on config, so most of the K drop on iso comes from the shrunk denominator).
+- cost: minutes, no GPU.
+- status: proposed
+
+## IDEA-052 Off-table stratum is half of the config dynamics loss: edge-fall error analysis
+- source: review of exp004_exp000_oracle_anchor
+- background: off-table oracle error rises from 0.619 m (val_id) to 0.827 m (config), K_off 0.363 to 0.106. In D space (diff vs static) off contributes 0.0369 of the 0.0750 config loss, iso 0.0388, cont -0.0008. Neither a displacement-output change nor camera conditioning obviously addresses edge-fall trajectories.
+- change: CPU-only listing of off-table episodes on config vs val_id: predicted vs GT displacement, whether the model predicts a fall at all, error split into fall/no-fall misclassification and magnitude.
+- discriminates: "model does not predict falls near edges" (layout/prior problem) vs generic dynamics skill loss. Feeds IDEA-049 (state-only ceiling on the same strata).
+- cost: minutes, no GPU.
+- status: proposed

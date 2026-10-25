@@ -29,6 +29,8 @@ Improve the Task B target error on the validation OOD splits (`val_ood_objects`,
 
 | exp005_exp000_repro | 0.316 (−0.063 vs static, CI [−0.073, −0.054]) | 0.157 | 0.015 | 0.343 | 1.000 | exp000 retrained unchanged on nc-10-1-1: REPRODUCED (tentative, C-009); now the adapter-bearing reference; blank-ablation order flipped vs exp000 |
 
+| exp004_exp000_oracle_anchor | 0.316 (bit-exact repro of exp005; eval-only, privileged diagnostic) | 0.157 | 0.015 | 0.343 | 1.000 | oracle-anchored skill K: id 0.420, config 0.152; iso rho 0.451 (point estimate only, CI crosses 0.5 and 0.75); stratum mix explains about 1% (C-010, tentative); lever choice amended, see Known facts |
+
 Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.510 / 0.664, config 0.269 / 0.241.
 
 ## Known facts (Phase 1 setup, 2026-10-24)
@@ -67,6 +69,12 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - `compare` now reports `per_split_ci95` / `per_split_verdict`, takes `--splits` (any val_* or val_diag_* split), `--task A|B`, and `exp_id:mode` for ablations. Use it for exp001's Task A normal-vs-swap criterion in addition to the fixed 0.05 m margin.
 - Diagnostic splits `val_diag_elev`, `val_diag_count`, `val_diag_corner` (300 episodes each) are inferred in every job and listed in results.md, not in the primary metric.
 - Qwen3-VL bbox_3d centre/frame/units match our parser (camera frame, metres). Our qwen3d prompt is not Qwen's native template (adds K, frame sentence, multiple objects per query); exp001 measures "Qwen3-VL with our prompt" (IDEA-023).
+
+## exp004 findings (2026-10-25; privileged oracle-anchored diagnostics on the exp005 adapter, tentative, C-010)
+- Config dynamics skill falls even with GT t=0 anchoring: K_oa id 0.420, config 0.152 (Q 0.36 vs own-path 0.25). On isolated pushes K_iso 0.482 -> 0.217, rho 0.451, CI [0.14, 0.81] (point-estimate falsified). Consistency gate passed (0.010 m).
+- The stratum mix explains about 1% of the loss. Shapley split of the 0.140 config shift: perception about 0.060, dynamics about 0.080 (point estimates).
+- Reviewer caveats: much of the iso K drop is a smaller denominator (iso target displacement 0.137 -> 0.103 m, absolute error only 0.071 -> 0.081 m); about half of the config loss in D space is edge-fall episodes; camera-frame push mapping confound. R3's pre-registered IDEA-002 promotion is NOT adopted; run the no-GPU IDEA-050 first (left/right vs away/toward pushes, along/cross-push split). Also IDEA-051, 052.
+- iso K on diag splits: elev 0.337, count 0.444, corner 0.444 (config 0.217): points to an interaction.
 
 ## Unblocked (2026-10-25)
 - The torchvision gap was fixed by the human; exp005 reran and finished (1.41 GPU-h). Adapter: `/var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter`. Read exp004 and later exp000-derived diagnostics against exp005, not exp000's recorded numbers. Next: exp004 (prepare in progress), then IDEA-040 (no-GPU prior baseline), IDEA-025/026.

@@ -156,3 +156,21 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - The box change and the render noise are confounded.
   - C-005 (inference bit-reproducibility) is separate and still holds only for a fixed adapter.
   - Retraining is not bit-exact, though the numbers are close.
+
+## C-010 (privileged diagnostic) With GT t=0 re-anchoring, the exp005 adapter's displacement skill is lower on val_ood_config than on val_id, in every physics stratum; the stratum mix explains almost none of it
+- **claim**: Replacing the model's own t=0 with GT t=0 (oracleanchor = GT_t0 + (B^ - A^); uses privileged GT, not a model result) still leaves a large loss of motion-normalised skill K from val_id (0.420) to val_ood_config (0.152). The loss is not a stratum-mix effect (Comp about 0.01; negative in absolute-diff space). Isolated pushes: K 0.482 -> 0.217. About 43% of the config shift is perception and 57% dynamics (point estimates, path-averaged).
+- **evidence**: exp004_exp000_oracle_anchor, recomputed by the reviewer from `compare` (all CIs per split, vs static):
+  - oracleanchor diff: val_id -0.1115 [-0.128, -0.097], config -0.0366 [-0.048, -0.024].
+  - iso K (rescaled): id 0.482 [0.423, 0.539], config 0.217 [0.075, 0.341]. The two K intervals do not overlap.
+  - rho = 0.451, conservative interval [0.14, 0.81]: crosses 0.5 and 0.75, so the pre-registered FALSIFIED call is point-estimate only.
+  - cont K: id 0.529 (n 31), config 0.224. off K: id 0.363, config 0.106 [0.063, 0.162].
+  - Decomposition: S_cfg 0.1396 = P_oa 0.0647 + D_oa 0.0750 = delta C3 0.0543 + delta G 0.0854. Shapley 0.0595 / 0.0802.
+  - Diag iso K: elev 0.337, count 0.444, corner 0.444 (no CI computed).
+- **status**: tentative. Direction of the K loss on the oracle path is CI-supported (config K_oa CI excludes val_id's by a wide margin); the size and the "dynamics, not perception" attribution are not.
+- **caveats**:
+  - The K drop on isolated pushes is mostly a denominator effect: iso target displacement is 0.137 m (id) vs 0.103 m (config), while the oracle iso absolute error is 0.071 m vs 0.081 m. In absolute terms, isolated-push error rose by about 0.010 m. Do not write "dynamics skill is lost on simple pushes" without the absolute-error CI (IDEA-051).
+  - In D space the config loss splits about 0.0388 iso / 0.0369 off-table / -0.0008 contact. Roughly half is off-table episodes (edge falls), which neither IDEA-002 nor camera conditioning addresses (IDEA-052).
+  - Camera-frame confound is untested: actions are camera-relative, away/toward map to elevation-dependent camera y/z, left/right do not (IDEA-050). The diag splits argue against elevation alone: elev iso K is 0.337, config 0.217, and no single factor or pair reproduces config (3-way interaction or regime change).
+  - Oracle path mixes separate Task A and Task B generations (unmoved error 0.010 m config vs 0.006 id; gate passed at 0.05 m).
+  - Single adapter and seed. n_cont = 31 on val_id.
+  - Extends but does not replace C-006 and C-007. The C-007 own-path perception/dynamics split is unchanged and still point-estimate only.
