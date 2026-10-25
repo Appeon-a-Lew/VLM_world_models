@@ -3,6 +3,17 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
+## Ranking (planner, 2026-10-25, round 6, re-rank only, no new spec; GPU occupied by another user)
+Inputs: IDEA-043..046 folded in (exp005 post-review, SR-3D, VGGT). exp005 done; adapter exists. exp004 submit is blocked by the busy GPU.
+Top 5 (NG = no GPU, G = GPU):
+1. IDEA-040 training-answer prior baseline (NG, ~0.5 day CPU): bounds the image-free share of exp000/exp005's val_id and forces gain; links to 008, 025. Floor only (random camera pose weakens the prior).
+2. IDEA-043(a) exp005 blank-tail listing (NG, minutes): checks whether the +0.055 blank shift and the blank-vs-none flip come from a few episodes; decides if the image-gap ordering is trustworthy before 041/043(b) spend GPU.
+3. IDEA-034+035 = exp004_exp000_oracle_anchor (G, ~0.25 GPU-h, planned, queued first when the GPU frees): routes the next 1.4 GPU-h training run (014 vs 002 vs 025/026).
+4. IDEA-042 DA-V2 depth lookup vs elevation (mostly NG: the GT-oracle depth lookup is CPU, DA-V2-Small is feasible on CPU for a few hundred images per split; GPU ~0.2 h only for speed). Tells whether estimated depth degrades at config like exp000, so gates 020/013/044.
+5. IDEA-026 then 025 counterfactual actions on the exp005 adapter (G, ~0.15 GPU-h each): tests whether the forces gain (78% of aggregate) uses the action.
+Next: IDEA-014 (G, 1.4, conditional on exp004 R1/R2), IDEA-002 (G, 1.4, conditional on R3 or 025/026), IDEA-043(b) seed 1 (G, 1.4; noise floor, medium), IDEA-036 eval (G, <0.1, data exists), IDEA-037, IDEA-041 (after 040), IDEA-016, IDEA-038, IDEA-044 (conditional on 013 being built; low), IDEA-039 (low).
+needs-human: IDEA-045 and IDEA-046 (VGGT needs a new dependency; human already dropped the VGGT half of 022). Park until approval; 042 covers the same question with an allowed model.
+
 ## Ranking (planner, 2026-10-25, round 5, re-rank only, no new spec)
 Inputs: IDEA-037..042 (V-JEPA, SFT-vs-RL, Thinking in Space, Depth Anything V2). exp005 (repro) is running; exp004 follows on its adapter.
 Top 5:
@@ -557,7 +568,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - background: exp005 matched exp000 within 0.0024 on the primary, but it is one same-seed repeat on a new box, so it is not a seed-noise estimate. The blank ablation differed by +0.055 and flipped the blank-vs-none order (exp005 blank-none +0.027 [+0.011, +0.043]; exp000 -0.014).
 - change: (a) zero GPU: list per-episode blank errors on val_id in exp005 (tail count, top-5 episodes, Task B vs Task A). (b) one change: seed 1, otherwise exp005's spec; report primary, per-split, gap and all three ablations.
 - cost: (a) none; (b) about 1.4 GPU-h.
-- status: proposed
+- status: proposed (round 6: (a) ranked #2, no GPU; (b) in Next)
 
 ## IDEA-044 Frame ablation for the IDEA-013 xyz position embedding: camera-frame vs table-canonical xyz (output stays camera frame)
 - source: research/literature/2025_sr3d.md
@@ -575,7 +586,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: whether a frozen RGB-only geometry model degrades on val_ood_config like exp000 (0.136 vs 0.016-0.024). If it does, depth/point-map injection from estimated geometry will not fix config; if it stays near id level, IDEA-022 (SpaceMind-style fusion) is promising. Also reports scale bias separately from spread.
 - cost: ~0.5 day, ~0.2 GPU-h (1.2B params; install and checkpoint availability unverified).
 - risk: scale not metric, so a single global factor may bias per split; report bias and spread separately.
-- status: proposed
+- status: needs-human: VGGT is a new dependency (see IDEA-022 human note)
 
 ## IDEA-046 Can RGB-only geometry recover camera elevation? VGGT table-plane fit vs GT elevation per split (eval-only)
 - source: research/literature/2025_vggt.md
@@ -584,4 +595,4 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: whether a predicted-elevation text input is feasible (small error) or IDEA-016 can only be an oracle diagnostic (breaks at low elevation).
 - cost: ~0.3 day, ~0.1 GPU-h. Shares the VGGT install with IDEA-045.
 - risk: at 12-25 deg the table is foreshortened, so the plane fit is poorly conditioned exactly where it matters.
-- status: proposed
+- status: needs-human: VGGT is a new dependency
