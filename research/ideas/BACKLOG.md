@@ -3,6 +3,11 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
+## Ranking (planner, 2026-10-25, round 8; spec: exp008_uvz_output)
+1. IDEA-014 (planned: exp008_uvz_output, G 1.4 h): exp007 D-mixed routes here; no pinned file touched (new config, prompts/parse/infer/sft edits only). Info: R1-R4 routing in spec. Effect on primary: -0.01 to -0.02 at best.
+2. IDEA-055 (NG, print-only per-direction sign-normalised error): cheap, but an eval_only rerun is ~0.23 GPU-h and exp006/007 CIs were +-0.04; low info gain.
+3. IDEA-025/026: needs-human (pinned change, outbox/exp007_cf_flip_needs_pinned_change.md). IDEA-056 applied in exp008 calibration. IDEA-016 not promoted; IDEA-043(a), 040 NG fillers.
+
 ## Ranking (planner, 2026-10-25, round 7; spec: exp006_exp005_direction_split; after exp004 review_post)
 1. IDEA-050 + 052 (+ 051 absolute errors), status planned: exp006_exp005_direction_split. G 0.23 h eval_only (agent.sh cannot read existing preds, so rerun exp005 adapter with printed read-outs; bit-exact repro doubles as determinism check). For: review_post section 5 amendment 1-2; separates camera-frame (IDEA-016) from generic (IDEA-002/025) from denominator. Against: privileged oracle path, single adapter. Effect on primary: none; info: picks the next 1.4 h run.
 2. IDEA-026 then 025 counterfactual actions (G, ~0.15 h each): runner-up; forces is 78% of the gain, and promotes IDEA-002 independently.
@@ -238,7 +243,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - expected: lower Task A error on val_ood_config, since 2D pointing is native to Qwen3-VL and less viewpoint-tied. The error also splits into 2D and depth parts.
 - cost: prompt/target and parser change plus 1 SFT run (about 1.4 GPU h)
 - evidence (researcher, 2026-10-24): Cube R-CNN uses the same parameterisation, projected 2D centre plus depth back-projected with known K (research/literature/2023_omni3d_cube_rcnn.md, §4.1). Equation-anchored tool use (research/literature/2026_camera_robust_3d_tooluse.md, Table 3) shows that at fixed K, adding depth + K to Qwen3-VL-8B raises Det F1 from 38.43 to 44.13 and Ground from 50.13 to 55.17. Caveat from the same note: back-projection fixes the camera-frame centre, but Task B dynamics on the table plane still depend on elevation, so for val_ood_config Task B pair this with IDEA-016/021.
-- status: proposed
+- status: planned: exp008_uvz_output
 
 ## IDEA-015 Depth-lookup oracle for Task A (diagnostic)
 - source: research/literature/2026_onecanvas.md

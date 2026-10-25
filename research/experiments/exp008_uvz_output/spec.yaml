@@ -1,0 +1,109 @@
+id: exp008_uvz_output
+hypothesis: >
+  (IDEA-014) Training the same LoRA SFT with answers written as pixel centre plus depth
+  ([u, v, z], u and v on Qwen's 0-1000 grid, z in metres) and decoding to camera xyz with the
+  per-episode K lowers the Task A error on val_ood_config (exp005: 0.137) by at least 0.03 m and
+  lowers the primary metric (val OOD Task B target mean) below exp005's 0.3160 by more than the
+  0.005 m threshold, because 2D pointing is native to Qwen3-VL and less tied to the training
+  camera elevation. Predicted direction: primary down (about -0.01 to -0.02 at best; the config
+  perception share of the config shift is about 0.06 of 0.14, and config is 1/3 of the mean).
+change: >
+  Task A/B answer format becomes {"label", "uvz": [u, v, z]} (u, v 0-1000 grid, z metres), decoded to
+  camera xyz with K inside parse_answer; nothing else (data, LoRA, lr, epochs, seed, prompt
+  intro, intrinsics sentence, metrics) changes.
+baseline: exp005_exp000_repro
+kind: train
+train_config: configs/sft_qwen3vl2b_uvz.yaml   # copy of sft_qwen3vl2b.yaml plus `style: uvz` and a new `out:`
+style: uvz                                      # inference prompt/parse style
+ablations: [none, swap]                         # blank dropped: blank-vs-none order flipped in exp005 (C-001 caveat)
+budget_hours: 3
+seed: 0
+
+implementation:
+  - >
+    physwm/vlm/prompts.py: add style "uvz". prompt_text: replace the FRAME sentence and format
+    line for this style only with "u, v are the pixel position of the object centre on a 0-1000 grid
+    (u right, v down, relative to image width/height); z is the depth along the viewing direction in
+    metres. Answer only with JSON: [{"label": "<object>", "uvz": [u, v, z]}, ...]". Keep the
+    intrinsics sentence and Task A/B asks unchanged. target_text(ep, task, style="center"): for "uvz"
+    take c = gt_centers_cam (camera xyz, as now), u = (fx*x/z + cx)/W*1000, v = (fy*y/z + cy)/H*1000
+    (round 1 decimal), z round 3 decimals. Default style keeps today's output byte-identical.
+  - >
+    physwm/vlm/parse.py: parse_answer(text, ep, style="center"). Accept key "uvz" in _entries and in
+    _ENTRY_RE. For style "uvz" convert (u, v, z) to x = (u/1000*W - cx)*z/fx, y = (v/1000*H - cy)*z/fy,
+    z = z, with W, H, K from ep.camera. If z <= 0 or non-finite, treat that object as missing (counts
+    in parse/missing rate, no clamping). Output stays {oid: [x, y, z]} camera metres, so the pinned
+    scorer is untouched.
+  - >
+    physwm/vlm/infer.py: add "uvz" to --style choices and pass args.style into parse_answer. Add a
+    print-only per-split Task A line for uvz runs: median |du| in px, median |dv| in px, median |dz| in
+    m versus GT (from gt uvz), so the 2D and depth parts of the Task A error are visible (no effect on
+    scoring or pred files).
+  - >
+    physwm/vlm/sft.py: SFTData takes style = cfg.get("style", "center") and calls
+    prompt_text(ep, task, style) and target_text(ep, task, style) (replacing the hard-coded "center").
+    The existing config has no style key, so exp000/exp005 behaviour is unchanged.
+  - >
+    configs/sft_qwen3vl2b_uvz.yaml: a NEW file, identical to configs/sft_qwen3vl2b.yaml except
+    `style: uvz` and out: /var/tmp/toyi/wm/runs/sft_qwen3vl2b_uvz. A new file is needed because the
+    training style lives in the config and the reference config must stay untouched. It is not in
+    PINNED_FILES (exec.py), so no human re-pin is needed. scripts/check_spec.py: add "uvz" to STYLES
+    (not pinned in exec.py; exec.py does not validate style and passes spec.style to infer.py).
+  - >
+    Before submit run the unit tests plus a round-trip check on 50 train episodes: target_text uvz ->
+    parse_answer uvz must return the GT camera xyz within 0.002 m (rounding), and 5 episodes with the
+    center style must give byte-identical prompts/targets to main. Then python3 scripts/check_spec.py
+    on this spec, commit, submit. Evaluate val_* splits only; no id_test/ood_* run.
+
+success_criterion:
+  calibration_from_exp005: >
+    exp005 val_id: Task A all_mean 0.015, Task B target 0.157 (static 0.265), none 0.500, swap 0.406,
+    gap 0.343; Task A per split objects 0.023, forces 0.016, config 0.137, diag count 0.021, elev
+    0.084, corner 0.079, elev_corner 0.122. Reproduction noise exp000 vs exp005 on the primary was
+    0.0024 (0.3136 vs 0.3160), per-split Task B within 0.015, so 0.005 is above the noise floor but not
+    by much (one seed).
+  validity_gate: >
+    Result is interpretable only if parse_rate_min >= 0.99 and missing <= 0.01 on every val split,
+    val_id Task A all_mean <= 0.030 (2x exp005's 0.015), and val_id Task B target mean <= 0.200
+    (static 0.265; exp005 0.157). If it fails, route R4 and draw no conclusion about the representation.
+  primary_metric: >
+    Supported if val OOD Task B target mean <= 0.311 (exp005 0.3160 minus the 0.005 threshold) with the
+    paired bootstrap CI of the difference vs exp005 (compare exp008 exp005_exp000_repro) excluding 0;
+    comparable if within +/-0.005; worse if > 0.321. Always also report vs static 0.379.
+  per_split: >
+    Report Task A and Task B target for val_id, objects, forces, config and diag count/elev/corner/
+    elev_corner against exp005 (exp003 on exp000 for the diag Task A references above). Mechanism
+    check: Task A val_ood_config <= 0.100 (drop >= 0.037, about the size needed for the perception share
+    0.06 to show up in Task B) and the diag Task A drops are largest on elev and elev_corner (0.084,
+    0.122). Guard: forces Task B (0.510) and objects (0.161) must not worsen by more than 0.03 each.
+    Per-split Task B CIs from compare --splits.
+  image_dependence: >
+    Gap = none minus normal on val_id Task B target (exp005 0.343); also swap minus normal (exp005
+    0.249). Gap in [0.30, 0.40] means similar image use; below 0.25 means the uvz model leans on the
+    image less (flag, does not itself fail). Do not use blank. Both none and swap must stay worse than
+    static 0.265 on val_id (C-001) to say image dependence is retained.
+  routing:
+    R1_supported_and_mechanism: >
+      Primary <= 0.311 and config Task A <= 0.100: perception representation is a lever. Adopt uvz as
+      the new base; next IDEA-015 (depth-lookup oracle on these outputs) to split 2D vs depth, then
+      IDEA-002 on top.
+    R2_taskA_better_primary_comparable: >
+      Config Task A <= 0.100 but primary within +/-0.005: perception improved but dynamics did not
+      follow; the dynamics half (about 0.08 of the 0.14, exp004) is the bottleneck. Next IDEA-002
+      (forces grounds) or the pinned-change IDEA-025/026 request; keep uvz only if simpler or equal.
+    R3_no_taskA_gain: >
+      Config Task A > 0.120 and primary comparable or worse: the output parameterisation is not the
+      cause; the viewpoint shift is in the visual features. Next IDEA-016 (camera pose text) or IDEA-019
+      (K/crop variation), and IDEA-013 per-patch xyz.
+    R4_invalid_or_worse: >
+      Validity gate fails, or primary > 0.321 with val_id Task A fine: uvz hurts the dynamics answer
+      (Task B after a push may leave the image, u/v outside 0-1000, off-table fall). Inspect the
+      depth-vs-2D print lines and the off-image fraction before any further uvz work; drop IDEA-014.
+  objective_link: >
+    Tests the perception half of the val_ood_config loss (exp004 Shapley about 0.060 of 0.140) by a
+    representation that does not depend on the camera elevation as an output, and keeps the image-
+    dependence gap as the guard.
+  if_it_fails: >
+    A flat Task A on config shows representation is not the lever (R3), which removes IDEA-014/015 and
+    moves effort to camera conditioning and dynamics. One seed; single-run differences under 0.01 are
+    reported with their CIs and not over-read.
