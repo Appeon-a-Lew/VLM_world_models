@@ -11,3 +11,4 @@
 2026-10-25 exp005_exp000_repro resubmitted | commit 90b1cc3 unchanged spec, pid 263869 | prior failure env (torchvision, fixed by human)
 2026-10-25 exp005_exp000_repro done 1.41 GPU-h | primary val_ood_target_mean 0.3160 (static 0.3790, diff -0.0629 CI [-0.0725,-0.0535]; exp000 0.3136) | image gap 0.343 | parse 1.000 | verdict: REPRODUCED (tentative, one seed, C-009); blank ablation order flipped vs exp000; reviewer confirmed, wording amended
 2026-10-25 exp004_exp000_oracle_anchor pre-review REVISE (round 1: spec re-anchor on exp005) -> APPROVE (round 2); submit DENIED: GPU busy (11120 MiB used by another user); retry later
+2026-10-25 exp004 submit retry denied again: GPU busy (5808 MiB by someone else); busy check appears to deny any foreign usage; human notified (outbox/gpu_busy_other_user_2026-10-25.md)
