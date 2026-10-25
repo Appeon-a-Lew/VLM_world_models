@@ -82,6 +82,11 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - Off-table recall (privileged) drops id 0.351 -> config 0.090 (drop 0.262 [0.141, 0.382]); also low on objects, count, corner; high on elev 0.42 (IDEA-054). Two readings of R-D in the spec; same route.
 - Routing: IDEA-025/026 (counterfactual actions on the exp005 adapter) next; IDEA-016 not promoted; IDEA-002 not promoted.
 
+## exp007 findings (2026-10-25; bit-exact re-run of exp005 adapter, privileged oracle-path per-axis read-out, tentative)
+- A-yz (LR yz rise localised to camera y/z, AT rise exceeding LR) not supported and not refuted: did_yz negative with CI including 0 on all three pairs (CIs about ±0.04). The LR probe check was formally invalid (miscalibrated 0.01 m limit vs 0.030 m on val_id); this does not change the route. D-mixed -> IDEA-014 next; IDEA-016 not promoted.
+- Descriptive: GT away/toward motion splits y:z about equally on val_id (|y| 0.097, |z| 0.098) but z-dominant on val_ood_config and val_diag_elev (e.g. config |y| 0.030, |z| 0.092); val_diag_corner (no elevation change) stays equal (0.076 / 0.074). Whether the model's predictions follow this is untested; IDEA-055 (per-direction sign-normalised error, no GPU) and the pinned-change IDEA-025/026 are the better-posed tests.
+- Lesson: calibrate validity limits from val_id before pre-registering (IDEA-056).
+
 ## Unblocked (2026-10-25)
 - The torchvision gap was fixed by the human; exp005 reran and finished (1.41 GPU-h). Adapter: `/var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter`. Read exp004 and later exp000-derived diagnostics against exp005, not exp000's recorded numbers. Next: exp004 (prepare in progress), then IDEA-040 (no-GPU prior baseline), IDEA-025/026.
 
