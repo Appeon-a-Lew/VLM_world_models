@@ -76,6 +76,12 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - Reviewer caveats: much of the iso K drop is a smaller denominator (iso target displacement 0.137 -> 0.103 m, absolute error only 0.071 -> 0.081 m); about half of the config loss in D space is edge-fall episodes; camera-frame push mapping confound. R3's pre-registered IDEA-002 promotion is NOT adopted; run the no-GPU IDEA-050 first (left/right vs away/toward pushes, along/cross-push split). Also IDEA-051, 052.
 - iso K on diag splits: elev 0.337, count 0.444, corner 0.444 (config 0.217): points to an interaction.
 
+## exp006 findings (2026-10-25; bit-exact re-run of exp005 adapter, privileged oracle-path diagnostics, tentative)
+- Camera-frame hypothesis (away/toward pushes degrade more on config) not supported: config DiD -0.0196 [-0.057, 0.017]; the R-A magnitude (+0.02) is excluded at 95%. R-C holds on the letter, but the CIs are about ±0.03 wide, so about one third of the iso K drop (about +0.010 m error) is unresolved.
+- val_diag_elev: left/right error rises, away/toward does not (DiD -0.0349 [-0.071, -0.002]). Fragile (one split, CI edge, reverse order on val_diag_elev_corner). Not read as a contradiction of the camera-frame story; per-axis error (IDEA-053) is the discriminating read-out.
+- Off-table recall (privileged) drops id 0.351 -> config 0.090 (drop 0.262 [0.141, 0.382]); also low on objects, count, corner; high on elev 0.42 (IDEA-054). Two readings of R-D in the spec; same route.
+- Routing: IDEA-025/026 (counterfactual actions on the exp005 adapter) next; IDEA-016 not promoted; IDEA-002 not promoted.
+
 ## Unblocked (2026-10-25)
 - The torchvision gap was fixed by the human; exp005 reran and finished (1.41 GPU-h). Adapter: `/var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter`. Read exp004 and later exp000-derived diagnostics against exp005, not exp000's recorded numbers. Next: exp004 (prepare in progress), then IDEA-040 (no-GPU prior baseline), IDEA-025/026.
 
