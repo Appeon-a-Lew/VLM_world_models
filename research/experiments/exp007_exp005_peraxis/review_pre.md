@@ -1,25 +1,27 @@
-# Pre-review exp007_exp005_peraxis (worktree HEAD 48768a5)
+# Pre-review exp007_exp005_peraxis, round 2 (worktree HEAD 2724516, main f6ce41b)
 
-Verdict: **REVISE** (small spec-only edits plus one print line; code is otherwise sound)
+Verdict (round 2): **APPROVE**
 
-## What checks out
-- One intentional change. Diff vs main is exp006 code plus `axis_readout` / `axis_bootstrap` / `print_axis`. No change to prompts, parse, pinned files, generation or the jsonl writers. Nothing is written to normal.jsonl or none.jsonl.
-- Leakage and gaming: the numbers are the oracle-anchored path, which uses GT t=0, and it is labelled "privileged diagnostic" everywhere. The prompts are untouched. Skipped (None) predictions are dropped and not defaulted to a position.
-- Bootstrap: the residual is pred - gt1, one row per target episode, each split-group resampled independently, 1000 draws, `default_rng(0)`, percentile CI. This is sound. Groups with n < 30 in either split are skipped and printed, and the DiD is dropped (tested).
-- Guards: `print_axis` runs after all files are written, inside `except Exception`, so a read-out bug prints `[axis] FAILED` and cannot fail the run. Tests cover zeros, a pure y offset, a pure x offset and the n<30 skip.
-- exp004 key-assert (`oracleanchor_records`) is NOT inside a try. It is deterministic given the same data, splits and bit-exact generation, and exp006 passed it on the same inputs. The residual risk is low and only arises if the stack drifts, in which case the run is void anyway. Accept, but state it in the spec as a known unguarded step.
+## Round-1 fixes, verified against spec and diff
+1. A-yz over-reading: resolved. did_yz (AT minus LR yz rise) > 0 with CI lower bound > 0 is now required in the hypothesis and in A-yz. If the did_yz CI includes 0 the routing is the cheapest discriminator, not a 016 training run.
+2. LR probe: resolved. `gt_motion` and `print_gtmotion` print mean |gt1-gt0| per axis and |y|+|z| over the same iso rows (pred not None) as `axis_readout`. The 0.01 m rule is pre-registered, and an invalid split cannot count towards A-yz.
+3. Multiplicity: resolved. The spec states that the splits are nested and that there are about 12 uncorrected CIs. A-yz and B-x need val_diag_elev plus one other split, same sign, CI lower bound > 0 on both. A lone CI > 0 is exploratory, and D is the default if elev_corner disagrees.
+4. Thresholds: resolved. yz/2 is printed in `[axis]` and `[axis-base]` lines with the val_id baselines. The spec says the 0.02 threshold is not raised after the fact, and the call is labelled "near noise floor".
+5. Falsification wording: resolved. "Falsified" means not A-yz, and C-flat, B-x and D are listed as the sub-cases. B-x fires when x >= 0.02 even if yz < 0.01.
+6. Signed means: resolved. `axis_signed_ci` gives bootstrap CIs for signed y and z per split-group, and the spec calls them descriptive unless the CI excludes 0.
+7. Cosmetic: resolved. `ap = argparse.ArgumentParser()` appears as unchanged context in the diff. The diff vs main is only derived.py, infer.py and tests/test_derived.py (627 insertions, 0 deletions). The worktree is clean. The worktree spec does not appear in `diff main`, so it is identical to main's. I could not run `cmp` or a diff against the exp006 branch in this environment, so the byte-identity of derived.py and test_derived.py to exp006 apart from the exp007 additions rests on the implementation note and is not independently verified. It is low risk, because those additions are pure functions and prints.
+8. Unguarded key-assert: the risk is now stated in the spec as a known unguarded step.
 
-## Required fixes
-1. **A-yz routing over-reads the evidence.** The spec predicts that LR yz error rises with elevation and that LR x error does not. Generic monocular perception noise also gives this pattern: depth (z) and vertical (y) noise are larger than lateral noise and grow with an elevated view and a smaller object footprint. It needs no "camera-frame effect". So A-yz cannot rank IDEA-016 ahead of IDEA-014 (perception u,v,depth), and B-x or C-flat do not cleanly demote 016 either. Either (a) change A-yz routing to "yz-localised; 016 and 014 not separated; next step is the cheapest discriminator" and name that discriminator (for example a Task A per-axis perception error read-out, or the 016 prompt-only counterfactual). Or (b) add a discriminating prediction to the hypothesis. A frame-effect account predicts that AT yz rises MORE than LR yz (positive did_yz CI > 0), because AT motion projects onto y/z. Pure noise inflation predicts did_yz about 0. Make did_yz > 0 (CI lower bound > 0) a required part of A-yz. The code already computes it.
-2. **Control for the LR probe (the exp006 reviewer's point).** The spec asserts that LR GT y/z motion is about zero, but never checks it, and the AT/LR split is already a weak probe. Add one print line per split and group of the mean |gt1 - gt0| on x, y and z (iso rows). This is the same print-only guard and needs no new generation. Pre-register that if LR GT |y|+|z| displacement exceeds 0.01 m on any compared split, the LR yz rise is uninterpretable and the outcome is D. The rise must also be read against the GT-motion difference between splits, since an elevated camera tilts LR motion if the camera has any yaw or roll.
-3. **Multiplicity and non-independence.** Make the "2 of 3" rule explicit about two things. First, val_ood_config contains the elev and corner factors, so the three splits are nested and overlapping and are not three independent replications. Second, there are about 12 uncorrected 95% CIs (yz and x, per group, 3 pairs). Pre-register either a stricter bar (CI lower bound > 0.01 m, the falsification threshold, for the A-yz calls) or an explicit statement that a lone CI > 0 is exploratory and routing needs the point estimate to clear the threshold on val_diag_elev (the cleanest single-factor split) plus one other. The hypothesis already admits the exp006 non-replication on elev_corner, so say that D is the expected default if elev_corner disagrees.
-4. **Thresholds are asymmetric.** yz is a sum of two axes (|y|+|z|), while x is one axis, but both are compared to 0.02 and 0.01 m. Also print or state the val_id baseline magnitudes (exp006 [direction] gives delta_e scale) so the 0.02 and 0.01 m thresholds can be judged against the noise floor, or compare against a per-axis mean. At minimum, report yz/2 alongside.
-5. **Hypothesis and routing do not align.** "Falsified if yz rise < 0.01 on at least 2 of 3, or CI includes 0 on all 3" differs from C-flat (which also needs x < 0.01) and from the D catch-all. State that falsification of the hypothesis means "not A-yz", and that C-flat is the sub-case that routes to 014. State which case fires when yz < 0.01 on 2 of 3 but x is >= 0.02 (B-x, as written).
-6. **The signed y mean has no CI** but is used as a supporting reading in D. Either add a bootstrap CI for signed y (and z) per split, or say it is descriptive only.
-7. Cosmetic: the diff has the stray edit `ap =argparse.ArgumentParser()` (whitespace). Revert it to keep the diff clean, since the validity gate needs no incidental change. Note that `physwm/vlm/derived.py` and `tests/test_derived.py` appear as new files vs main, so confirm they are byte-identical to exp006's apart from the exp007 additions.
+## New-confound and crash check
+- Generation, prompts, parse, pinned files, jsonl writers and pyproject.toml are untouched. All jsonl files are written before any new print runs. Nothing new is written to disk.
+- `print_direction`, `print_gtmotion` and `print_axis` each run in their own `try/except Exception`. A bug in one prints a `FAILED` line and cannot kill the run or suppress the others. Output is also ordered so the jsonl and the final "wrote ..." line survive.
+- `_iso_resid` reshapes to (n,3), so empty groups are safe. `axis_bootstrap` returns `({}, skipped)` when both groups are skipped, and `print_axis` handles that. `axis_signed_ci` skips n < 30. The DiD is dropped when either group is skipped.
+- The `np.percentile` call in `axis_bootstrap` runs only when `point` is non-empty, which the `groups` check guarantees.
+- The `[axis-did]` skipped-group line carries no privileged tag. That is cosmetic, because it contains no numbers.
 
-## Validity and budget
-Bit-exact repro (metrics.json 0.3160 +/- 0.005, OOD per_split_diff exactly 0.0 vs exp005_exp000_repro, strata lines identical to exp006) is a good gate. Budget 0.75 h is fine. Baseline = exp006, with the repro compared against exp005, is fine.
+## Residual notes, not blocking
+- The "yz/2 baseline > 0.02 so near noise floor" label and the 0.01 m probe rule are applied by eye in the report. The report should quote the `[gtmotion]` and `[axis-base]` lines verbatim.
+- The reference scale from exp006 mixes cross and along push-axis errors, and the spec already says it is not the same quantity.
+- The validity gate (0.3160 +/- 0.005, OOD diff exactly 0.0, strata identical to exp006) is sound. The budget is fine.
 
-## After the fixes
-This is a cheap diagnostic. Once items 1-3 are fixed (item 2 needs one extra print), APPROVE without a further round, given the changes are spec text plus one print line.
+Approved to submit.
