@@ -3,6 +3,12 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
+## Ranking (planner, 2026-10-25, round 7; spec: exp006_exp005_direction_split; after exp004 review_post)
+1. IDEA-050 + 052 (+ 051 absolute errors), status planned: exp006_exp005_direction_split. G 0.23 h eval_only (agent.sh cannot read existing preds, so rerun exp005 adapter with printed read-outs; bit-exact repro doubles as determinism check). For: review_post section 5 amendment 1-2; separates camera-frame (IDEA-016) from generic (IDEA-002/025) from denominator. Against: privileged oracle path, single adapter. Effect on primary: none; info: picks the next 1.4 h run.
+2. IDEA-026 then 025 counterfactual actions (G, ~0.15 h each): runner-up; forces is 78% of the gain, and promotes IDEA-002 independently.
+3. IDEA-016 (conditional on R-A), IDEA-014 (perception half, 0.06 of 0.14), IDEA-002 (forces grounds), IDEA-040, IDEA-043(a), IDEA-042, IDEA-051 diag-splits.
+Pre-registered routing R-A..R-D is in the spec.
+
 ## Ranking (planner, 2026-10-25, round 6, re-rank only, no new spec; GPU occupied by another user)
 Inputs: IDEA-043..046 folded in (exp005 post-review, SR-3D, VGGT). exp005 done; adapter exists. exp004 submit is blocked by the busy GPU.
 Top 5 (NG = no GPU, G = GPU):
@@ -631,7 +637,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: camera-frame confound (loss on away/toward only, cross-push error, grows with elevation gap) versus a general dynamics or magnitude shortfall (loss on left/right too). It picks between IDEA-016 / a table-frame output and IDEA-002 before any 1.4 GPU-h run.
 - cost: minutes of CPU; preds are on the box under /var/tmp/toyi/wm/experiments/exp004_exp000_oracle_anchor/pred/.
 - risk: needs the action direction per episode from episode metadata (read-only).
-- status: proposed (rank first)
+- status: planned: exp006_exp005_direction_split
 
 ## IDEA-051 Diag-split strata K with CIs, and the 3-way interaction check
 - source: review of exp004_exp000_oracle_anchor
@@ -647,4 +653,4 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: CPU-only listing of off-table episodes on config vs val_id: predicted vs GT displacement, whether the model predicts a fall at all, error split into fall/no-fall misclassification and magnitude.
 - discriminates: "model does not predict falls near edges" (layout/prior problem) vs generic dynamics skill loss. Feeds IDEA-049 (state-only ceiling on the same strata).
 - cost: minutes, no GPU.
-- status: proposed
+- status: planned: exp006_exp005_direction_split (fall recall / false alarm part, rule R-D)

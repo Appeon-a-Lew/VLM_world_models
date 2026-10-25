@@ -1,0 +1,114 @@
+id: exp006_exp005_direction_split
+# IDEA-050 + IDEA-052 (+ IDEA-051 absolute errors), planner round 6, 2026-10-25. Source: exp004 review_post section 5
+# (routing amendment 1-2). Rationale for a GPU job: analysis code can only run on the box through
+# scripts/agent.sh, and only reviewed code in the worktree is executed. The existing exp004 preds are
+# not readable by any agent.sh verb, so the read-out is printed to job.log by an eval_only re-run of
+# the exp005 adapter (0.23 GPU-h, bit-exact with exp004 expected). The re-run doubles as a determinism check.
+hypothesis: >
+  The exp004 loss of oracle-anchored dynamics skill on isolated pushes in val_ood_config is a camera-frame
+  (elevation) effect. Prediction (direction: concentrated): the iso absolute oracle-path error of the
+  target rises more on away/toward pushes than on left/right pushes between val_id and val_ood_config,
+  Delta_e_AT - Delta_e_LR >= 0.02 m, and the rise is mostly cross-push error. Falsified if the difference
+  is < 0.01 m or its 95% CI includes 0 with both Delta_e of similar size, or if both Delta_e are ~0
+  (the K drop is then only the shrunken denominator, 0.137 -> 0.103 m).
+change: >
+  none to model, prompts or generation: eval_only re-run of the exp005 adapter with instrumentation
+  only. infer.py (exp004's strata + oracleanchor code, commit 6052307) additionally prints direction-split,
+  along/cross-push and off-table read-out lines to job.log, computed from the in-memory oracleanchor
+  records and GT.
+baseline: exp004_exp000_oracle_anchor
+kind: eval_only
+lora: /var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter
+style: center
+ablations: [none]
+budget_hours: 0.75
+seed: 0
+# No eval_limit, no batch_size (bit-exact repro of exp004 requires exec defaults).
+
+implementation:
+  - >
+    Fresh worktree off main. Cherry-pick exp004's code: `git show 6052307 -- physwm/vlm/infer.py
+    physwm/vlm/derived.py tests/test_derived.py` (includes exp003's hunk). No change to prompts.py,
+    parse.py, pinned files (exec.py, metrics.py, baselines.py, schema.py) or pyproject.toml.
+  - >
+    physwm/vlm/derived.py (stdlib + numpy only if already imported there, else pure python). Add pure
+    function direction_readout(rows) -> dict. A row is {split, stratum, label, gt0, gt1, pred} for the
+    target object only (camera frame, metres; pred = oracleanchor centre, None if missing -> skip and
+    count). Group g in {LR (left/right), AT (away/toward)}, strata iso and off, per split. Per group:
+    n, disp = mean ||gt1-gt0||, e = mean ||pred-gt1||, K = 1 - e/disp, and for iso only: with
+    ghat = (gt1-gt0)/||gt1-gt0|| (skip if disp < 0.01), pd = pred-gt0, along = mean |(pd-(gt1-gt0)).ghat|,
+    cross = mean ||(pd-(gt1-gt0)) - ((pd-(gt1-gt0)).ghat) ghat||, gain = mean (pd.ghat)/||gt1-gt0||.
+    Off stratum: pred_fall = ||pd|| >= 0.5 m; report recall = P(pred_fall | GT off) and
+    false_alarm = P(pred_fall | GT on table), plus mean ||pd||/||gt1-gt0|| on off episodes.
+  - >
+    Same function: paired bootstrap (1000 resamples, numpy default_rng(0), resample episodes within
+    split-group) giving 95% CI for Delta_e_g = e_cfg,g - e_id,g (unpaired across splits, resample each
+    split independently), for the difference-in-differences Delta_e_AT - Delta_e_LR, for the cross-push
+    share Delta_cross_AT / Delta_e_AT, and for recall_id - recall_cfg.
+  - >
+    physwm/vlm/infer.py: after all normal-mode splits have finished (so val_id, val_diag_elev,
+    val_diag_count, val_diag_corner, val_ood_config rows are all in memory), print lines starting with
+    "[direction] " (leading newline, flush=True), one per (split, group, stratum) with the fields above,
+    then "[direction-did] ..." lines for the bootstrap quantities for the split pairs (val_id vs
+    val_ood_config) and (val_id vs val_diag_elev), "[offtable] ..." lines. Nothing is written to
+    normal.jsonl or none.jsonl, and the generation call is untouched. direction label from
+    ep.action.direction_label (physwm/schema.py:56).
+  - >
+    tests/test_derived.py: add synthetic tests: (1) a row set where pred = gt1 gives e = 0, K = 1;
+    (2) a pure along-push undershoot gives cross = 0 and along > 0; a pure perpendicular offset gives
+    along = 0 and cross = offset; (3) off recall with pred displacement 0.9 / 0.1 gives 0.5 on two
+    synthetic off rows. `pytest -x tests` is the preflight gate.
+  - >
+    Commit spec + code, run python3 scripts/check_spec.py on the worktree spec, keep the worktree
+    clean, submit. Pre-review: `git diff main...HEAD -- physwm/vlm/infer.py` shows only exp003/exp004's
+    hunks plus the [direction]/[offtable] prints.
+
+success_criterion:
+  primary_metric: >
+    No model change, so the primary cannot move. Reproduction: metrics.json 0.3160 +/- 0.005 and
+    `compare exp006_exp005_direction_split exp005_exp000_repro` per_split_diff exactly 0.0 on all 8
+    splits (tolerance 0.001); exp004 strata lines (iso/cont/off counts) identical to exp004's. If any
+    fails, report "stack drift" and do not apply the routing below.
+  objective_link: >
+    Chooses the next 1.4 GPU-h training run between a camera-conditioning lever (IDEA-016, table-frame
+    output), IDEA-002 (displacement output) and the perception lever IDEA-014, or sends the next spec to
+    IDEA-025/026.
+  if_it_fails: >
+    If the direction split is flat (rule R-B below) the camera-frame story is dead and the config loss is
+    generic or edge-fall. IDEA-016 is demoted, IDEA-002 stays a forces-only candidate.
+
+decision_criteria:
+  validity: >
+    Strata lines 8 of 8 as in exp004 (same counts), stats lines 16 of 16 plus 2 none lines, [direction]
+    lines present for val_id, val_diag_elev, val_diag_count, val_diag_corner, val_ood_config, n_iso
+    LR and AT each >= 30 on val_id and val_ood_config (otherwise report that group as underpowered and
+    do not route on it).
+  pre_registered_routing: >
+    Written before any [direction] line is read. e = iso absolute oracle-path error (privileged
+    diagnostic, GT t=0; not a model result). Delta_e_g = e_cfg,g - e_id,g. DiD = Delta_e_AT - Delta_e_LR.
+    R-A camera-frame: DiD >= 0.02 m, bootstrap CI lower bound > 0, and cross-push share of Delta_e_AT
+    >= 0.5. Next spec: IDEA-016 (elevation in the prompt) ahead of IDEA-002. Check also val_diag_elev
+    (same sign, DiD > 0) as corroboration; if absent, call it "config-specific, point-estimate only".
+    R-B generic: both Delta_e_LR and Delta_e_AT >= 0.01 m and |DiD| < 0.01 m (or CI includes 0).
+    Dynamics loss is not camera-frame. Next spec: IDEA-025/026 (forces) to settle IDEA-002.
+    R-C denominator: both Delta_e_g CIs include 0 or < 0.01 m. The iso K drop is the shrunken
+    displacement, not lost skill. Config loss sits in off-table and perception (IDEA-014); next spec
+    IDEA-014 or IDEA-025/026 depending on R-D.
+    R-D off-table (independent of A-C): recall_id - recall_cfg >= 0.15 with CI lower bound > 0 means the
+    model does not predict edge falls on config (layout prior; IDEA-049 state-only ceiling is the next
+    diagnostic). Otherwise the off-table loss is magnitude/direction error, no extra routing.
+    If R-A and R-D both fire, report both and prefer IDEA-016 since it is one 1.4 GPU-h run on a
+    reviewed mechanism; the off-table half is flagged as unaddressed.
+    Thresholds are on point estimates; any call whose CI crosses the threshold is flagged
+    "point-estimate only" and routes to the next-cheaper (025/026) rather than a training run.
+
+report_must_quote:
+  - "agent.sh results: metrics.json and the compare against exp005_exp000_repro (all 8 splits)"
+  - "agent.sh log exp006_exp005_direction_split 600: every strata, [direction], [direction-did], [offtable] line"
+  - "e, Delta_e, DiD, cross share, recall/false-alarm tables with CIs, and which of R-A..R-D fired"
+  - "the sentence 'privileged diagnostic, uses GT t=0; not a model result' next to every oracle-path number"
+
+out_of_scope:
+  - "IDEA-025/026 counterfactual prompts (separate spec; the runner-up)."
+  - "Any training run (IDEA-002/014/016) until this routing is read."
+  - "Off-table state-only ceiling (IDEA-049)."
