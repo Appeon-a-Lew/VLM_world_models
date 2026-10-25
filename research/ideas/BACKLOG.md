@@ -596,3 +596,21 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: ~0.3 day, ~0.1 GPU-h. Shares the VGGT install with IDEA-045.
 - risk: at 12-25 deg the table is foreshortened, so the plane fit is poorly conditioned exactly where it matters.
 - status: needs-human: VGGT is a new dependency
+
+## IDEA-047 Type-keyed control task and linear-vs-MLP selectivity for the IDEA-030 probe (refinement)
+- source: research/literature/2019_hewitt_liang_control_tasks.md
+- background: Hewitt & Liang's control task assigns each word TYPE a fixed random output, so only a probe that memorises type to output can score; selectivity = task accuracy - control accuracy. IDEA-030's shuffled-target control permutes targets across episodes, which breaks both signal and any type lookup and so cannot tell a memorising probe from a noisy one.
+- change: one change to IDEA-030's protocol, no new GPU: add a control target keyed on object type (shape, colour) that is a fixed random xyz per type, same ridge probe, same sites. Report selectivity (real error gain over the control) per layer and split, with the closed-form ridge (linear) as the primary probe. Compare layers by selectivity, not raw error.
+- discriminates: whether a probe's low error on config/diag_elev reflects geometry in the tokens or memorised per-type offsets. Ridge on ~1,000 episodes is cheap, so an MLP arm is optional and only to show the gap.
+- cost: ~0.1 day on top of IDEA-030.
+- risk: with continuous xyz targets the selectivity unit is metres, not accuracy; the paper's numbers are for classification, so the transfer is by analogy only.
+- status: proposed
+
+## IDEA-048 Identity-matched swap: replace the image with one that has the same objects but different positions (image-dependence refinement)
+- source: research/literature/2020_geirhos_shortcut_learning.md
+- background: Geirhos et al. use cue-conflict stimuli (shape vs texture) to find which cue a model uses. Our swap ablation replaces the image with another episode's, which changes object identity, count and positions together, so a large swap penalty cannot say whether the model reads positions or only identity/count.
+- change: one change to the ablation set, eval-only: add a `swap_matched` mode that takes an image from an episode with the same shape/colour multiset (render a new episode with the same object list and new poses if no match exists) while the prompt stays as is. Score Task A and B against the original episode's GT.
+- discriminates: error under swap_matched approaching the none/blank level means the model reads positions; staying near normal means it relies on identity/prompt priors. Gives a position-vs-identity split of the image-dependence gap on val_id and each OOD split.
+- cost: small sim-side job for rendering plus ~0.2 GPU-h inference.
+- risk: needs new renders (data change, so human-approved config); matched-multiset episodes may be rare with 1-5 objects.
+- status: proposed
