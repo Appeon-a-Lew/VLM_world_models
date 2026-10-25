@@ -6,8 +6,11 @@ hypothesis: >
   axes. Prediction (direction: concentrated on y/z): on left/right (LR) isolated pushes, whose GT y/z motion is
   zero, the mean absolute y+z component of pd - (gt1 - gt0) rises from val_id to each of val_diag_elev,
   val_diag_elev_corner and val_ood_config by >= 0.02 m (bootstrap CI lower bound > 0 on at least 2 of the 3),
-  while the x-component error rises by < 0.01 m. Falsified if the y+z rise is < 0.01 m on at least 2 of the 3
-  splits or its CI includes 0 on all three.
+  while the x-component error rises by < 0.01 m. Discriminating prediction (frame effect vs generic perception
+  noise inflation): the AT group yz rise exceeds the LR yz rise (did_yz = AT minus LR > 0, CI lower bound > 0),
+  because AT motion projects onto y/z; pure noise inflation predicts did_yz about 0. "Falsified" means "not A-yz"
+  as defined in pre_registered_routing (any of: yz rise < 0.01 m on at least 2 of 3 splits, did_yz CI includes 0,
+  LR probe invalid). C-flat is the sub-case of not-A-yz that routes to IDEA-014; B-x and D-mixed are the others.
 change: >
   none to model, prompts or generation: eval_only rerun of the exp005 adapter that additionally prints, per
   camera axis (x, y, z), the signed mean and mean absolute value of pd - (gt1 - gt0) for iso episodes, per
@@ -42,7 +45,18 @@ implementation:
     tests/test_derived.py: (1) pred = gt1 gives all zeros; (2) a pure y offset of 0.05 m gives yz = 0.05, x = 0 and
     signed y = +0.05; (3) a pure x offset gives yz = 0. `pytest -x tests` is the preflight gate.
   - >
+    REQUIRED code addition (LR-probe validity): infer.py prints, per split and group (LR, AT), "[gtmotion] " lines
+    with mean |gt1 - gt0| on x, y, z and the sum |y|+|z| over the same iso rows (print-only, same guard). Also
+    print val_id baselines: x, y, z, yz and yz/2 mean-abs per group, so thresholds can be judged against the floor.
+    Add bootstrap CIs for the signed y and z means per split-group (same function).
+  - >
+    Cosmetic: revert the stray whitespace edit `ap =argparse.ArgumentParser()`; confirm derived.py and
+    tests/test_derived.py are byte-identical to exp006's apart from the exp007 additions.
+  - >
     Commit, run python3 scripts/check_spec.py on the worktree spec, keep the worktree clean, submit.
+    Known unguarded step: the exp004 key-assert in oracleanchor_records is not inside a try. It is deterministic on
+    identical data, splits and bit-exact generation (exp006 passed it); residual risk is low and arises only on stack
+    drift, in which case the run is void anyway.
 
 success_criterion:
   primary_metric: >
@@ -63,17 +77,34 @@ decision_criteria:
     Written before any [axis] line is read. All numbers are a privileged diagnostic (GT t=0 anchor; not a model
     result). Rise = mean-abs(split) - mean-abs(val_id), LR group, in metres. Thresholds are on point estimates;
     a call whose CI crosses its threshold is "point-estimate only" and does not route to a training run.
-    A-yz: yz rise >= 0.02 with CI lower bound > 0 on >= 2 of the 3 splits AND x rise < 0.01 on those splits.
-      Routing: IDEA-016 (elevation or table-frame output) becomes the next 1.4 GPU-h training spec, ahead of
-      IDEA-014 on the axis evidence; IDEA-002 unchanged.
-    B-x: x rise >= 0.02 with CI lower bound > 0 and yz rise < 0.01. Error is along the push axis (magnitude or
-      direction text), not elevation. Routing: IDEA-002 (displacement output); IDEA-016 demoted.
-    C-flat: yz and x rises both < 0.01 on >= 2 of 3 splits, or all CIs include 0. Routing: perception noise from
-      separate Task A/B generations plus the denominator; IDEA-014 (u, v, depth) is next; IDEA-016 demoted.
-    D-mixed: any other combination, including A-yz on only one split or opposite ordering on elev_corner (the
-      exp006 non-replication). Report per split; route to IDEA-014 (the CI-solid perception component, exp004);
-      no 016 run. Also read the signed y mean: a consistent sign (same on elev, elev_corner, config) supports a
-      systematic projection bias and is reported but does not alone route.
+    Scale (pre-registered, before results): yz = |y|+|z| is a two-axis sum, x is one axis. Report yz/2 next to yz
+      and judge against the val_id baseline printed in the run. Reference scale from exp006 (not the same quantity):
+      val_id LR cross-push error 0.0217 m, along 0.0587 m; elev LR cross 0.0499, along 0.0847. Thresholds are
+      therefore applied as: yz rise >= 0.02 m (about 0.01 m per axis) and x rise < 0.01 m, as written; if val_id yz/2
+      baseline is already > 0.02 m the 0.02 yz threshold is not raised after the fact, but the call is labelled
+      "near noise floor".
+    LR probe validity: [gtmotion] LR mean |gt y|+|gt z| must be <= 0.01 m on val_id and on every compared split.
+      If > 0.01 m on any compared split, LR yz is uninterpretable on that split (camera yaw/roll tilts LR motion);
+      that split cannot count towards A-yz and the outcome is D unless the other criteria hold on the rest.
+    Multiplicity: splits are nested (val_ood_config contains the elev and corner factors), so they are not independent
+      replications; there are about 12 uncorrected 95% CIs (yz and x, per group, 3 pairs). Stricter bar: A-yz and
+      B-x need the point estimate to clear threshold on val_diag_elev (cleanest single-factor split) plus at least
+      one other split, same sign on both, with CI lower bound > 0 on those two. A lone CI > 0 is exploratory.
+      D is the expected default if elev_corner disagrees (exp006 non-replication).
+    A-yz: on val_diag_elev and one other split, LR yz rise >= 0.02 with CI lower bound > 0, x rise < 0.01, AND
+      did_yz (AT minus LR yz rise) > 0 with CI lower bound > 0 on those splits. If did_yz CI includes 0 the pattern
+      is yz-localised but equally explained by generic perception noise: route to the cheapest discriminator
+      (a Task A per-axis perception error read-out or the 016 prompt-only counterfactual), not to a 016 training run.
+      If did_yz > 0 with CI > 0: IDEA-016 becomes the next 1.4 GPU-h spec, ahead of IDEA-014; IDEA-002 unchanged.
+    B-x: x rise >= 0.02 with CI lower bound > 0 and yz rise < 0.01 on the same two-split bar (this fires even if yz
+      < 0.01 on 2 of 3 but x >= 0.02). Error is along the push axis, not elevation. Routing: IDEA-002; note that
+      perception noise can also produce this, so 016 is only de-prioritised, not refuted.
+    C-flat: yz and x rises both < 0.01 on >= 2 of 3 splits, or all CIs include 0. Not-A-yz sub-case. Routing:
+      IDEA-014 (u, v, depth) next; IDEA-016 not promoted (not refuted: this probe is weak).
+    D-mixed: any other combination (including yz >= 0.02 but not meeting the two-split bar, invalid LR probe, or
+      opposite ordering on elev_corner). Report per split; route to IDEA-014 (CI-solid perception component,
+      exp004); no 016 run. Signed y/z means are descriptive only unless their bootstrap CI excludes 0; a consistent
+      sign with CIs excluding 0 on elev, elev_corner and config is reported but does not alone route.
     Not claimed: a causal camera-frame mechanism, any non-privileged result, or that the action direction in
     the text is used (that stays an open question pending the IDEA-026 request in research/outbox/).
 
