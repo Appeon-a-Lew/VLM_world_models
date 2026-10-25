@@ -558,3 +558,30 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: (a) zero GPU: list per-episode blank errors on val_id in exp005 (tail count, top-5 episodes, Task B vs Task A). (b) one change: seed 1, otherwise exp005's spec; report primary, per-split, gap and all three ablations.
 - cost: (a) none; (b) about 1.4 GPU-h.
 - status: proposed
+
+## IDEA-044 Frame ablation for the IDEA-013 xyz position embedding: camera-frame vs table-canonical xyz (output stays camera frame)
+- source: research/literature/2025_sr3d.md
+- background: SR-3D adds a sinusoidal+MLP encoding of a per-pixel 3D position map to vision tokens and canonicalises it "so that it does not depend on camera pose" (single-view map from DA-V2 relative depth). val_ood_config shifts camera elevation (12-25 deg vs train 30-60).
+- change: conditional on IDEA-013 being built. One change relative to the IDEA-013 arm: express the PE xyz in a table-canonical frame (origin on table plane, z up, from GT camera pose) instead of camera frame. Same output format, LoRA recipe and data.
+- discriminates: if the config failure is pose dependence, the canonical PE should lower Task A and Task B error on val_ood_config and diag_elev; equal results mean PE content, not frame, is what matters.
+- cost: ~1.4 GPU-h for the extra arm, small data-pipeline transform.
+- risk: model must learn canonical-to-camera transform for the output; could hurt val_id. SR-3D gives no formula, so our canonicalisation is our own design.
+- status: proposed
+
+## IDEA-045 VGGT single-image point-map Task A baseline per split (eval-only)
+- source: research/literature/2025_vggt.md
+- background: VGGT is the geometry encoder of SpaceMind (IDEA-021/022). The paper reports no quantitative single-view accuracy, and lists degradation under extreme rotation; output scale is learned in a normalised space, not metric.
+- change: no training. Run VGGT on each val RGB as a single frame; median point-map xyz over the GT object mask; one global scale factor fitted on train episodes only; add half-extent offset as in IDEA-015/042. Report Task A on val_id, val_ood_*, diag_elev/count/corner via `compare`, alongside exp005 and the IDEA-042 DA-V2 arm.
+- discriminates: whether a frozen RGB-only geometry model degrades on val_ood_config like exp000 (0.136 vs 0.016-0.024). If it does, depth/point-map injection from estimated geometry will not fix config; if it stays near id level, IDEA-022 (SpaceMind-style fusion) is promising. Also reports scale bias separately from spread.
+- cost: ~0.5 day, ~0.2 GPU-h (1.2B params; install and checkpoint availability unverified).
+- risk: scale not metric, so a single global factor may bias per split; report bias and spread separately.
+- status: proposed
+
+## IDEA-046 Can RGB-only geometry recover camera elevation? VGGT table-plane fit vs GT elevation per split (eval-only)
+- source: research/literature/2025_vggt.md
+- background: IDEA-016 feeds camera pose as text, but at test time on real or new data GT pose is not available. VGGT single-frame pose is identity by convention, so elevation must come from a plane fit in its point map.
+- change: no training. Fit the table plane to the VGGT point map (mask out objects), derive elevation from the plane normal vs optical axis, compare with GT elevation per split including 12-25 deg.
+- discriminates: whether a predicted-elevation text input is feasible (small error) or IDEA-016 can only be an oracle diagnostic (breaks at low elevation).
+- cost: ~0.3 day, ~0.1 GPU-h. Shares the VGGT install with IDEA-045.
+- risk: at 12-25 deg the table is foreshortened, so the plane fit is poorly conditioned exactly where it matters.
+- status: proposed
