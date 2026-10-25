@@ -77,7 +77,12 @@ success_criterion:
     within 0.0005 of normal (else the cf pass is not isolating the action text); (3) [cfprompt] shows n_changed == n_total
     for each cf mode on val_id and the shown sentences are really flipped/scaled; (4) no FAILED line, parse_rate_min >=
     0.99 and per-split missing-rate lines (if printed) <= 0.01; (5) n of the [cfdisp] 'non-sphere' group >= 50 on val_id,
-    else the slope is reported as not estimable. [cfsign] is valid only if frac_pos on the NORMAL pass is >= 0.80; if it
+    else the slope is reported as not estimable.
+    Gate (2) note: cf rewrites change the Task B token length, so left padding of Task A rows sharing a batch can change
+    and cause bf16 jitter. If gate (2) fails by a tiny amount, first compare the Task A raw output strings between the
+    normal and cf pass; if they are identical, treat it as scoring jitter (report it, do not conclude "not isolating");
+    only a difference in raw strings or a large gap counts as a gate failure. The 0.0005 threshold is unchanged.
+    [cfsign] is valid only if frac_pos on the NORMAL pass is >= 0.80; if it
     is lower, do not use [cfsign] and rely on the pinned errors.
   primary_metric: >
     None (eval only; the primary stays 0.3160). Read-outs are val_id Task B target mean per mode from results.md and
@@ -88,7 +93,9 @@ success_criterion:
     normal.jsonl, expected 0.157).
     Flip:  F-read   = E_flip >= 0.265 AND rise CI lower bound > 0.05 AND (if valid) frac_pos(flip) <= 0.35.
            F-ignore = rise <= 0.02 AND rise CI upper bound < 0.04 AND (if valid) frac_pos(flip) >= 0.75 * frac_pos(normal).
-           F-part   = anything else, reported with numbers.
+           F-part   = anything else, reported with numbers. If val_id is small, the rise CI may be wider than 0.04 so
+           that F-ignore cannot fire even for a small point rise; the outcome is then F-part by pre-registration
+           (a wide CI is an absence of evidence, not evidence of ignoring) and is reported with the CI width.
     Impulse: slope s = ln(median_dhat[cf_impulse_2] / median_dhat[cf_impulse_0.5]) / ln 4 on the non-sphere GT-moved
            group (ratio of medians, not median of ratios; also print the normal median as the middle point and require
            d(0.5) < d(1) < d(2) for 'used').
@@ -98,23 +105,47 @@ success_criterion:
     Limits: alpha=2 takes speeds to 0.6-3.2 m/s and alpha=0.5 to 0.15-0.8 m/s, partly outside the training range
            [0.3, 1.6]; a flat slope at alpha=2 can be saturation, so also quote the alpha=0.5 vs 1 ratio. Sphere targets
            roll and leave the table and are reported separately, not pooled into the slope.
+           Alternative explanation: rewritten values such as 0.31 or 1.24 N·s can fall outside the training text range,
+           so an error rise may be out-of-distribution text confusion rather than dynamics. The pinned rises alone never
+           give I-use; the slope s >= 0.8 and the ordering d(0.5) < d(1) < d(2) are the discriminators, and an
+           out-of-range-only rise (rises without slope and ordering) is I-part. Thresholds unchanged.
+  # Routing is a total function of (F, I), fixed before any cf line is read (rows F, columns I):
+  #              I-use   I-part                 I-ignore
+  #   F-read     R1      R3 if s<0.5 else INC   R3
+  #   F-part     INC     INC                    INC
+  #   F-ignore   R4      R2                     R2
+  # Validity failure (gates 1-4): INC regardless of cell. Slope unavailable (gate 5 or [cfdisp] missing): I-use cannot
+  # fire (it requires s), so the I column is I-ignore only if both pinned rises are <= 0.02 in absolute value, else
+  # I-part; the table is then applied as usual (F-read with I-part and s not estimable is INC).
+  # [cfsign] unavailable or invalid only drops its clause from F-read / F-ignore; the pinned errors decide F.
+  # INC = inconclusive. Cells are mutually exclusive: each (F, I) pair appears in exactly one route.
   routing:
     R1_action_used: >
       F-read and I-use. The action is used on val_id (in-distribution speeds); the forces gain is then not purely a
       prior (this does NOT test val_ood_forces, which the pinned ablation_split cannot reach). Next: IDEA-016 (camera pose
       text) as the geometry lever for the config perception half; IDEA-002 stays unpromoted.
     R2_action_ignored: >
-      F-ignore or I-ignore (either one). The model answers from the scene, not the stated action; C-002's forces gain is
-      at least partly a scene/training prior. Next: IDEA-040 (training-answer prior baseline, no GPU) to size the prior
-      share, then IDEA-002 with the action in a position the model must use (displacement output).
+      F-ignore and (I-ignore or I-part). The direction is not used and the magnitude is not clearly used: the model
+      answers from the scene, not the stated action; C-002's forces gain is at least partly a scene/training prior.
+      Requires F-ignore; I-ignore alone with F-read goes to R3, never here. Next: IDEA-040 (training-answer prior
+      baseline, no GPU) to size the prior share, then IDEA-002 with the action in a position the model must use
+      (displacement output).
     R3_direction_read_magnitude_not: >
-      F-read and I-ignore (or I-part with s < 0.5). The direction is used but the impulse is mapped to a typical
-      displacement. Next: IDEA-002 with an impulse-sensitive target (displacement), and a val_ood_forces cf run (needs a
-      human change of ablation_split or a new pinned mode).
+      F-read and (I-ignore, or I-part with s < 0.5). The direction is used but the impulse is mapped to a typical
+      displacement. F-read with I-part and s >= 0.5 (or s not estimable) is NOT R3; it is inconclusive. Next: IDEA-002
+      with an impulse-sensitive target (displacement), and a val_ood_forces cf run (needs a human change of
+      ablation_split or a new pinned mode).
+    R4_magnitude_used_direction_not: >
+      F-ignore and I-use. Contradictory-looking pattern (impulse scaling moves the answer, left/right flip does not).
+      Treated as inconclusive: not routed to 'action ignored' and not to 'action used'. Report the numbers, check
+      whether the impulse effect is out-of-range text confusion (see Limits) and whether the flip changes the answer
+      along a non-lateral axis; default next step as for inconclusive.
     inconclusive: >
-      Any other combination, including F-part, validity failure, or [cfsign]/[cfdisp] unavailable and pinned errors
-      between bands. Reported verbatim, not retro-fitted; default next step IDEA-040 plus a human request to extend the
-      cf modes to val_ood_forces.
+      Every cell not listed above: F-part with any I outcome; F-read with I-part and s >= 0.5 or s not estimable;
+      any validity failure (gates 1-4). Gate 5 / [cfdisp] / [cfsign] unavailable is handled by the rules in the table
+      comment (I-use cannot fire without the slope), not by an automatic inconclusive.
+      Reported verbatim, not retro-fitted; default next step IDEA-040 plus a human request to extend the cf modes to
+      val_ood_forces.
   image_dependence: >
     Report none/normal/swap-free results from the normal pass and none.jsonl only to confirm the repro (none 0.500 on
     val_id for exp005). No image-dependence claim is made from the cf modes (image is normal in all of them).
