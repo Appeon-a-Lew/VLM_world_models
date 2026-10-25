@@ -614,3 +614,12 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - cost: small sim-side job for rendering plus ~0.2 GPU-h inference.
 - risk: needs new renders (data change, so human-approved config); matched-multiset episodes may be rare with 1-5 objects.
 - status: proposed
+
+## IDEA-049 State-only dynamics ceiling: small MLP/Transformer from GT t=0 centres + action to t=1 s centres (no image)
+- source: research/literature/2023_slotformer.md
+- background: SlotFormer gets only +1.9 points from rollouts over a strong observation-only readout on Physion. Our own-perception static baseline is already hard, and the dynamics gain shrinks on val_ood_config. We do not know how much Task B error is left if perception were perfect and only dynamics were learned.
+- change: one change, CPU-only: train a small permutation-equivariant dynamics net (per-object GT centre, shape, size, push vector, force) on the train episodes to predict t=1 s centres. Score it on all val splits with GT t=0 state as input and again with exp005's Task A predictions as input.
+- discriminates: GT-state error vs exp005 Task B gives the perception-vs-dynamics split per split; the GT-state error on val_ood_config separates "harder multi-body contact" (IDEA-035) from "perception loss". The own-perception input row bounds the decomposition route (IDEA-002/033).
+- cost: roughly 0.5 day CPU, no GPU.
+- risk: overlaps IDEA-006 and IDEA-033 in spirit (those use VLM outputs or static); the ball-off-table cases may dominate the mean, so report medians. Camera-frame vs table-frame input matters at config.
+- status: proposed
