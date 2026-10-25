@@ -1,0 +1,88 @@
+id: exp007_exp005_peraxis
+# IDEA-053 (planner 2026-10-25, replan after the pinned-mode block on IDEA-025/026). Print-only eval_only rerun
+# of the exp005 adapter, same mechanism as exp006 (no pinned change, no new ablation mode).
+hypothesis: >
+  The elevated-camera loss of oracle-anchored dynamics skill is a camera-frame effect expressed on the camera y/z
+  axes. Prediction (direction: concentrated on y/z): on left/right (LR) isolated pushes, whose GT y/z motion is
+  zero, the mean absolute y+z component of pd - (gt1 - gt0) rises from val_id to each of val_diag_elev,
+  val_diag_elev_corner and val_ood_config by >= 0.02 m (bootstrap CI lower bound > 0 on at least 2 of the 3),
+  while the x-component error rises by < 0.01 m. Falsified if the y+z rise is < 0.01 m on at least 2 of the 3
+  splits or its CI includes 0 on all three.
+change: >
+  none to model, prompts or generation: eval_only rerun of the exp005 adapter that additionally prints, per
+  camera axis (x, y, z), the signed mean and mean absolute value of pd - (gt1 - gt0) for iso episodes, per
+  LR / AT group and split, with bootstrap CIs (print-only).
+baseline: exp006_exp005_direction_split
+kind: eval_only
+lora: /var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter
+style: center
+ablations: [none]
+budget_hours: 0.75
+seed: 0
+# No eval_limit, no batch_size (bit-exact repro of exp005/exp006 is the validity control).
+
+implementation:
+  - >
+    Fresh worktree off main; take exp006's code (exp004 hunk 6052307 plus exp006's direction_readout and prints,
+    commits 75ebbfd and a93dfa4). No change to prompts.py, parse.py, pinned files or pyproject.toml.
+  - >
+    physwm/vlm/derived.py: add pure function axis_readout(rows) -> dict on the same rows as direction_readout
+    (target only, camera frame, metres, iso stratum): for g in {LR, AT}, per split, per axis a in {x, y, z}:
+    signed mean and mean abs of r_a = (pred - gt0 - (gt1 - gt0))_a = (pred - gt1)_a, and n. Also yz = mean(|r_y|+|r_z|).
+  - >
+    Same function: bootstrap (1000 resamples, default_rng(0), episodes within split-group, each split resampled
+    independently) giving 95% CIs for the yz and x mean-abs change from val_id to each of val_diag_elev,
+    val_diag_elev_corner, val_ood_config, per group, and the DiD (AT minus LR) on each pair, including
+    val_diag_elev_corner (omitted in exp006). Skip groups with n < 30 and say so.
+  - >
+    physwm/vlm/infer.py: after all normal-mode splits finish, print "[axis] " lines per (split, group, axis) and
+    "[axis-did] " lines per pair (leading newline, flush=True), inside the same try/except guard as exp006. Nothing
+    is written to normal.jsonl / none.jsonl; generation is untouched.
+  - >
+    tests/test_derived.py: (1) pred = gt1 gives all zeros; (2) a pure y offset of 0.05 m gives yz = 0.05, x = 0 and
+    signed y = +0.05; (3) a pure x offset gives yz = 0. `pytest -x tests` is the preflight gate.
+  - >
+    Commit, run python3 scripts/check_spec.py on the worktree spec, keep the worktree clean, submit.
+
+success_criterion:
+  primary_metric: >
+    No model change. metrics.json 0.3160 +/- 0.005 and compare vs exp005_exp000_repro per_split_diff exactly 0.0
+    on the 3 OOD splits, strata lines identical to exp006's; otherwise report "stack drift" and do not route.
+  objective_link: >
+    Decides between IDEA-016 (camera pose in the prompt), IDEA-014 (perception) and IDEA-002 for the next 1.4 GPU-h
+    run by localising the elevated-camera error by axis.
+  if_it_fails: >
+    If the y+z rise is absent (falsified) the exp006 LR rise on val_diag_elev was not a y/z frame effect; IDEA-016
+    stays unpromoted and the config loss is attributed to perception noise and the denominator.
+
+decision_criteria:
+  validity: >
+    Reproduction as above; [axis] lines present for val_id, val_diag_elev, val_diag_elev_corner, val_ood_config,
+    n_iso >= 30 per group, no FAILED line.
+  pre_registered_routing: >
+    Written before any [axis] line is read. All numbers are a privileged diagnostic (GT t=0 anchor; not a model
+    result). Rise = mean-abs(split) - mean-abs(val_id), LR group, in metres. Thresholds are on point estimates;
+    a call whose CI crosses its threshold is "point-estimate only" and does not route to a training run.
+    A-yz: yz rise >= 0.02 with CI lower bound > 0 on >= 2 of the 3 splits AND x rise < 0.01 on those splits.
+      Routing: IDEA-016 (elevation or table-frame output) becomes the next 1.4 GPU-h training spec, ahead of
+      IDEA-014 on the axis evidence; IDEA-002 unchanged.
+    B-x: x rise >= 0.02 with CI lower bound > 0 and yz rise < 0.01. Error is along the push axis (magnitude or
+      direction text), not elevation. Routing: IDEA-002 (displacement output); IDEA-016 demoted.
+    C-flat: yz and x rises both < 0.01 on >= 2 of 3 splits, or all CIs include 0. Routing: perception noise from
+      separate Task A/B generations plus the denominator; IDEA-014 (u, v, depth) is next; IDEA-016 demoted.
+    D-mixed: any other combination, including A-yz on only one split or opposite ordering on elev_corner (the
+      exp006 non-replication). Report per split; route to IDEA-014 (the CI-solid perception component, exp004);
+      no 016 run. Also read the signed y mean: a consistent sign (same on elev, elev_corner, config) supports a
+      systematic projection bias and is reported but does not alone route.
+    Not claimed: a causal camera-frame mechanism, any non-privileged result, or that the action direction in
+    the text is used (that stays an open question pending the IDEA-026 request in research/outbox/).
+
+report_must_quote:
+  - "agent.sh results: metrics.json and the compare against exp005_exp000_repro (3 OOD splits)"
+  - "agent.sh log exp007_exp005_peraxis 600: every strata, [axis] and [axis-did] line"
+  - "x and yz mean-abs and signed means per group with CIs, the rises and DiDs, and which of A-yz / B-x / C-flat / D-mixed fired"
+  - "the sentence 'privileged diagnostic, uses GT t=0; not a model result' next to every oracle-path number"
+
+out_of_scope:
+  - "IDEA-025/026 counterfactual prompts (need pinned-mode change, research/outbox/)."
+  - "IDEA-054 recall sweep and any training run (IDEA-002/014/016)."

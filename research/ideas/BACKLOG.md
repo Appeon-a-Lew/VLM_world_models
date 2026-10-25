@@ -334,7 +334,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: slope ≈ 2 (d ∝ v² for on-table sliding) means physics-consistent use of the impulse. Slope ≈ 0 means anchoring to the training displacement prior (QuantiPhy: counterfactual priors drop MRA by about 70-80%). 0 < slope < 2 means partial use. It is a within-episode intervention, so it avoids the mass, edge-distance and mode confounds of IDEA-008's cross-episode regression. Run it in the same job as IDEA-008.
 - cost: worktree prompt option plus about 0.15 GPU h. Counterfactual predictions have no GT, so log the slope to job.log and never write them to `pred/normal.jsonl`. A scored version needs re-simulated counterfactual GT (`op_gen` change, human).
 - note (researcher, 2026-10-24, research/literature/2023_physion_pp.md): the slope-2 expectation holds regardless of the latent density ρ ∈ [400, 800] and friction μ ∈ [0.35, 0.6] (both unobservable from one frame), because they cancel in d̂(2)/d̂(0.5). So 025 stays a clean test even though absolute displacement is ambiguous by up to about 0.45×-3.05× from the latents. Do not add mass covariates here; those belong to the IDEA-008 extension. Related: research/literature/2026_vlm_physics_interaction.md has no direct action-conditioning evidence (its single-step prompts state no action).
-- status: next after exp007 (planned as exp008 once exp007 routing is read)
+- status: needs-human (same pinned-mode request as IDEA-026, research/outbox/exp007_cf_flip_needs_pinned_change.md)
 
 ## IDEA-026 Counterfactual direction flip (action-dependence test)
 - source: research/literature/2026_quantiphy.md
@@ -342,7 +342,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: ≳90% sign agreement after the flip means the model reads the action direction. Lower agreement means it infers the direction from the scene layout. That is a scene-prior shortcut, plausible because `aim_at_other_prob: 0.4` makes "toward another object" guessable from the image.
 - cost: about 0.05 GPU h on top of IDEA-025
 - note (planner, 2026-10-24, round 2): a pinned-visible version needs no job.log. Write the flipped-prompt predictions to `pred/cf_flip.jsonl`, which pinned code scores against the *real* GT. If the model reads the direction, Task B target error under the flip should rise well above normal on val_id/val_ood_forces, by about 2× the displacement for on-table sliders. If error(cf_flip) ≈ error(normal), the action direction is ignored. This "action-dependence gap" mirrors image_dependence_gap. The sign-agreement statistic stays a job.log extra, once exp002 confirms log visibility.
-- status: planned: exp007_exp005_cf_direction_flip (val_id only: the pinned ablation split; forces needs a pinned-code change, needs-human)
+- status: needs-human (exp007_exp005_cf_direction_flip withdrawn: ablation modes are pinned in exec.py/check_spec.py; request in research/outbox/exp007_cf_flip_needs_pinned_change.md)
 
 ## IDEA-027 Test-time intrinsics-shift eval (crop-zoom val_id, K rewritten in the prompt; diagnostic)
 - source: research/literature/2026_camera_robust_3d_tooluse.md
