@@ -97,6 +97,9 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 ## Unblocked (2026-10-25)
 - The torchvision gap was fixed by the human; exp005 reran and finished (1.41 GPU-h). Adapter: `/var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter`. Read exp004 and later exp000-derived diagnostics against exp005, not exp000's recorded numbers. Next: exp004 (prepare in progress), then IDEA-040 (no-GPU prior baseline), IDEA-025/026.
 
+## Next (planner, 2026-10-25 round 9)
+exp009_exp005_cf_action planned (IDEA-025+026, eval-only on the exp005 adapter, val_id, budget 0.75 GPU-h): does the model use the action text? Pre-registered readout rules and routes R1 (used -> IDEA-016), R2 (ignored -> IDEA-040 then IDEA-002), R3 (direction only -> IDEA-002) are in the spec. The worktree must implement the cf modes in prompts.py/infer.py; real-episode check is the [cfprompt] job.log lines (no agent.sh op runs custom code). Runners-up: IDEA-040, IDEA-057, IDEA-002.
+
 ## Open questions
 - Why does zero-shot exp002 do worse with the correct image than with a swapped one: a frame flip or offset, or hedging toward a default output? (IDEA-024/028/032)
 - exp000's val_ood_config failure isn't explained by any single factor (exp003). Is it an interaction (elev × corner, IDEA-036) or additive? Is the lost dynamics gain lost skill, or harder multi-body contact (IDEA-035)? Does the split depend on the decomposition path (IDEA-034)?

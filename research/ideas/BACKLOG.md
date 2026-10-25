@@ -3,6 +3,15 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
+## Ranking (planner, 2026-10-25, round 9; spec: exp009_exp005_cf_action; after exp008 not-supported)
+Inputs: exp008 report (uvz not supported, routing inconclusive, default action IDEA-002 or IDEA-025/026), exec.py ABLATION_MODES and check_spec.py (cf_* modes confirmed; main's infer.py/prompts.py do not implement them, so the worktree must). NG = no GPU, G = GPU.
+1. IDEA-025 + 026 (planned: exp009_exp005_cf_action, G ~0.4 h, budget 0.75). For: exp004/006/007 never tested whether the action text is used; forces is 78% of the exp000 gain (exp000 review_post); QuantiPhy (research/literature/2026_quantiphy.md) predicts prior anchoring. Pinned scoring against real GT gives the sensitivity with paired CIs, plus print-only slope and sign lines. Against: val_id only (ablation_split), so val_ood_forces untested; impulse x2 leaves the training speed range. Effect on primary: none; info: high, each outcome (R1 used / R2 ignored / R3 direction-only) picks the next spec. Risk: infer-time prompt code only, no protected change.
+2. IDEA-040 training-answer prior baseline (NG, ~0.5 day CPU): sizes the image/action-free share; natural follow-up if R2 fires.
+3. IDEA-057 (NG, exp005 per-axis Task A, depth vs lateral): cheap, but needs an eval_only rerun (~0.25 G) because agent.sh cannot read preds; ride-along candidate later. IDEA-058 off-image fraction: low value now that uvz is dropped.
+4. IDEA-002 (G 1.4 h): promoted by exp008 default and by exp009 R2/R3. IDEA-016 (G 1.4 h): promoted by exp009 R1. IDEA-055 (NG), IDEA-043(a), IDEA-043(b) seed floor (G 1.4 h; would calibrate the 0.01 differences seen in exp008) next.
+5. Demoted: IDEA-014 (done: exp008 not supported), IDEA-015 (depends on 014), IDEA-059 (low; only if representation is revisited), IDEA-018/005 (evidence against).
+needs-human: extending cf modes to val_ood_forces (ablation_split change), IDEA-045/046 (new dependency).
+
 ## Ranking (planner, 2026-10-25, round 8; spec: exp008_uvz_output)
 1. IDEA-014 (planned: exp008_uvz_output, G 1.4 h): exp007 D-mixed routes here; no pinned file touched (new config, prompts/parse/infer/sft edits only). Info: R1-R4 routing in spec. Effect on primary: -0.01 to -0.02 at best.
 2. IDEA-055 (NG, print-only per-direction sign-normalised error): cheap, but an eval_only rerun is ~0.23 GPU-h and exp006/007 CIs were +-0.04; low info gain.
@@ -339,7 +348,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: slope ≈ 2 (d ∝ v² for on-table sliding) means physics-consistent use of the impulse. Slope ≈ 0 means anchoring to the training displacement prior (QuantiPhy: counterfactual priors drop MRA by about 70-80%). 0 < slope < 2 means partial use. It is a within-episode intervention, so it avoids the mass, edge-distance and mode confounds of IDEA-008's cross-episode regression. Run it in the same job as IDEA-008.
 - cost: worktree prompt option plus about 0.15 GPU h. Counterfactual predictions have no GT, so log the slope to job.log and never write them to `pred/normal.jsonl`. A scored version needs re-simulated counterfactual GT (`op_gen` change, human).
 - note (researcher, 2026-10-24, research/literature/2023_physion_pp.md): the slope-2 expectation holds regardless of the latent density ρ ∈ [400, 800] and friction μ ∈ [0.35, 0.6] (both unobservable from one frame), because they cancel in d̂(2)/d̂(0.5). So 025 stays a clean test even though absolute displacement is ambiguous by up to about 0.45×-3.05× from the latents. Do not add mass covariates here; those belong to the IDEA-008 extension. Related: research/literature/2026_vlm_physics_interaction.md has no direct action-conditioning evidence (its single-step prompts state no action).
-- status: needs-human (same pinned-mode request as IDEA-026, research/outbox/exp007_cf_flip_needs_pinned_change.md)
+- status: planned: exp009_exp005_cf_action (cf_impulse_0.5 / cf_impulse_2 modes now pinned; val_id only; with IDEA-026 in one eval-only job)
 
 ## IDEA-026 Counterfactual direction flip (action-dependence test)
 - source: research/literature/2026_quantiphy.md
@@ -347,7 +356,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: ≳90% sign agreement after the flip means the model reads the action direction. Lower agreement means it infers the direction from the scene layout. That is a scene-prior shortcut, plausible because `aim_at_other_prob: 0.4` makes "toward another object" guessable from the image.
 - cost: about 0.05 GPU h on top of IDEA-025
 - note (planner, 2026-10-24, round 2): a pinned-visible version needs no job.log. Write the flipped-prompt predictions to `pred/cf_flip.jsonl`, which pinned code scores against the *real* GT. If the model reads the direction, Task B target error under the flip should rise well above normal on val_id/val_ood_forces, by about 2× the displacement for on-table sliders. If error(cf_flip) ≈ error(normal), the action direction is ignored. This "action-dependence gap" mirrors image_dependence_gap. The sign-agreement statistic stays a job.log extra, once exp002 confirms log visibility.
-- status: needs-human (exp007_exp005_cf_direction_flip withdrawn: ablation modes are pinned in exec.py/check_spec.py; request in research/outbox/exp007_cf_flip_needs_pinned_change.md)
+- status: planned: exp009_exp005_cf_action (cf_flip mode pinned by the human 2026-10-25; the withdrawn exp007_exp005_cf_direction_flip dir can be removed)
 
 ## IDEA-027 Test-time intrinsics-shift eval (crop-zoom val_id, K rewritten in the prompt; diagnostic)
 - source: research/literature/2026_camera_robust_3d_tooluse.md

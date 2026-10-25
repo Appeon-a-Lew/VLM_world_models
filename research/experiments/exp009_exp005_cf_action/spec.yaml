@@ -1,0 +1,141 @@
+id: exp009_exp005_cf_action
+# IDEA-025 + IDEA-026 (planner 2026-10-25, round 9). Eval-only read-out of the exp005 adapter under counterfactual
+# action text. Uses the ablation modes cf_flip / cf_impulse_0.5 / cf_impulse_2 pinned on main in exec.py
+# (ABLATION_MODES) and scripts/check_spec.py (IMAGE_MODES). Main's infer.py/prompts.py do not know them yet, so the
+# worktree must implement them; that code is the one intentional change.
+hypothesis: >
+  The exp005 adapter conditions its Task B answer on the action text, not only on the image. Prediction
+  (direction: error rises under both counterfactuals, on val_id, Task B target mean, scored by the pinned scorer
+  against the REAL ground truth): (a) cf_flip (left<->right, away<->toward, impulse and image unchanged) raises the
+  target error from exp005's 0.157 to at least the static level 0.265 with a paired CI lower bound of the rise > 0.05;
+  (b) impulse scaling (x0.5 and x2, image and direction unchanged) raises the error by more than 0.03 for both factors
+  and the printed own-path displacement slope for non-sphere targets is >= 0.8 (physics for sliding: 2; log-log slope
+  of median predicted displacement between alpha=2 and alpha=0.5). Falsification = the action is largely ignored:
+  flip rise <= 0.02 and both impulse errors within 0.02 of 0.157.
+change: >
+  Add three Task B prompt interventions (cf_flip, cf_impulse_0.5, cf_impulse_2) as infer-time image-modes that keep the
+  normal image and rewrite only the action sentence; the model, normal-mode prompts, generation and scoring are untouched.
+baseline: exp005_exp000_repro
+kind: eval_only
+lora: /var/tmp/toyi/wm/experiments/exp005_exp000_repro/model/adapter
+style: center
+ablations: [none, cf_flip, cf_impulse_0.5, cf_impulse_2]   # none is mandatory for eval_only (image_dependence_gap)
+budget_hours: 0.75
+seed: 0
+# No eval_limit, no batch_size override (bit-exact repro of exp005/exp006/exp007 is the validity control).
+# Each cf pass runs on val_id only (policy ablation_split) with tasks A and B; Task A prompts carry no action, so
+# Task A under every cf mode must equal normal Task A (a free determinism check).
+
+implementation:
+  - >
+    Fresh worktree off main (at or after 1016cb8). No change to pinned files, pyproject.toml, configs or parse.py.
+    Files touched: physwm/vlm/prompts.py, physwm/vlm/infer.py, tests/test_cf_action.py (new).
+  - >
+    physwm/vlm/prompts.py: add `counterfactual_action_text(ep, mode) -> str`. For "cf_flip": take ep.action.text and
+    replace the phrase DIRECTION_PHRASE[ep.action.direction_label] (import from physwm.sim.push) by the phrase of the
+    opposite label (left<->right, away<->toward); assert the phrase occurs exactly once. For "cf_impulse_0.5" and
+    "cf_impulse_2": regex `impulse of ([0-9.]+) N·s` and replace the number by f"{alpha*float(number):.2f}" (alpha taken
+    from the text number, not from ep.action.impulse, so the format matches training). prompt_text(ep, task, style,
+    action_text=None): for task "B" use action_text if given instead of ep.action.text; the default path must produce
+    byte-identical prompts (the existing tests plus a new one pin this). load_image: any mode starting with "cf_" returns
+    the normal image (same branch as "normal").
+  - >
+    physwm/vlm/infer.py: extend --image-mode choices with cf_flip, cf_impulse_0.5, cf_impulse_2. In the message builder,
+    for Task B and cf modes pass action_text=counterfactual_action_text(ep, mode); Task A is untouched. Keep generation,
+    max_new_tokens and parsing identical. The pred records already store image_mode.
+  - >
+    infer.py print-only read-out (guarded by try/except so a print bug cannot fail the job; leading newline, flush=True),
+    run for every pass (normal pass, none, each cf mode) on val_id, and in the normal pass also on val_ood_forces:
+    (i) "[cfprompt] mode split n_changed n_total" plus the first 3 (original, modified) action sentences; n_changed must
+    equal n_total for the cf modes. (ii) "[cfdisp] mode split group n median_dhat median_dgt" where dhat = |pred_B_target
+    - pred_A_target| (own path: both from this pass; Task A is unchanged so this equals the normal Task A) and dgt =
+    |gt(t=1) - gt(t=0)| for the target, groups = all / sphere / non-sphere, restricted to episodes with dgt > 0.05 m.
+    (iii) "[cfsign] mode split n frac_pos" = fraction with dot(pred_B_target - pred_A_target, gt1 - gt0) > 0, same
+    restriction. These are print-only and are never written to a pred file.
+  - >
+    tests/test_cf_action.py (preflight gate, `pytest -x tests`): flip maps each of the four labels to its opposite phrase
+    and leaves the rest of the sentence unchanged; impulse x2 / x0.5 rewrites "0.62" to "1.24" / "0.31" and leaves the
+    direction phrase; prompt_text(ep, "B") with action_text=None is byte-identical to the current output; Task A text is
+    identical across modes; counterfactual_action_text raises on an unknown mode.
+  - >
+    No agent.sh operation runs custom code on the GPU box, so no real-episode pre-submit check is possible: the real-data
+    check is the [cfprompt] lines in job.log (n_changed == n_total and visibly flipped/scaled sentences), read through
+    `agent.sh log exp009_exp005_cf_action 600`. Run python3 /home/appeon_a_lew/adl4cv-worlmodels/scripts/check_spec.py on
+    this spec, commit, keep the worktree clean, submit. Evaluate val_* only; no id_test/ood_* run.
+
+success_criterion:
+  calibration_from_exp005: >
+    exp005 val_id (all from existing records, IDEA-056): Task B target mean 0.157, static 0.265 (= mean GT displacement
+    of the target, so a prediction that moves the target the wrong way by about its own length scores about 0.265 or
+    more), swap 0.406, none 0.500; Task A all_mean 0.0152; primary 0.3160 (exp000 vs exp005 repro difference 0.0024,
+    bit-exact repros exp004/006/007). The 0.02 'ignored' band is about 8x that repro difference and about 5% of the
+    swap-normal gap; the 0.03 'used' band is 1.5x the 0.02 band. [cfdisp] / [cfsign] values on normal are NOT known
+    before the run; their gates below are relative to the normal-pass print (set before reading cf lines).
+  validity_gate: >
+    Interpretable only if (1) normal primary is 0.3160 +/- 0.005 and compare vs exp005_exp000_repro per_split_diff is 0.0
+    on the 3 OOD splits (else report "stack drift", route nothing); (2) Task A val_id all_mean under every cf mode is
+    within 0.0005 of normal (else the cf pass is not isolating the action text); (3) [cfprompt] shows n_changed == n_total
+    for each cf mode on val_id and the shown sentences are really flipped/scaled; (4) no FAILED line, parse_rate_min >=
+    0.99 and per-split missing-rate lines (if printed) <= 0.01; (5) n of the [cfdisp] 'non-sphere' group >= 50 on val_id,
+    else the slope is reported as not estimable. [cfsign] is valid only if frac_pos on the NORMAL pass is >= 0.80; if it
+    is lower, do not use [cfsign] and rely on the pinned errors.
+  primary_metric: >
+    None (eval only; the primary stays 0.3160). Read-outs are val_id Task B target mean per mode from results.md and
+    `agent.sh compare exp009_exp005_cf_action:cf_flip exp009_exp005_cf_action --task B --splits val_id` (also for
+    cf_impulse_0.5 and cf_impulse_2), with paired bootstrap CIs of the rise E_cf - E_normal. Always quote static 0.265.
+  readout_rules: >
+    Written before any cf line is read. E = val_id Task B target mean, rise = E_cf - E_normal (normal = exp009's own
+    normal.jsonl, expected 0.157).
+    Flip:  F-read   = E_flip >= 0.265 AND rise CI lower bound > 0.05 AND (if valid) frac_pos(flip) <= 0.35.
+           F-ignore = rise <= 0.02 AND rise CI upper bound < 0.04 AND (if valid) frac_pos(flip) >= 0.75 * frac_pos(normal).
+           F-part   = anything else, reported with numbers.
+    Impulse: slope s = ln(median_dhat[cf_impulse_2] / median_dhat[cf_impulse_0.5]) / ln 4 on the non-sphere GT-moved
+           group (ratio of medians, not median of ratios; also print the normal median as the middle point and require
+           d(0.5) < d(1) < d(2) for 'used').
+           I-use    = s >= 0.8 AND both pinned rises (alpha 0.5 and 2) > 0.03 with CI lower bound > 0.
+           I-ignore = s <= 0.3 AND both |rises| <= 0.02.
+           I-part   = anything else (including s between 0.3 and 0.8, or only one factor moving), reported with numbers.
+    Limits: alpha=2 takes speeds to 0.6-3.2 m/s and alpha=0.5 to 0.15-0.8 m/s, partly outside the training range
+           [0.3, 1.6]; a flat slope at alpha=2 can be saturation, so also quote the alpha=0.5 vs 1 ratio. Sphere targets
+           roll and leave the table and are reported separately, not pooled into the slope.
+  routing:
+    R1_action_used: >
+      F-read and I-use. The action is used on val_id (in-distribution speeds); the forces gain is then not purely a
+      prior (this does NOT test val_ood_forces, which the pinned ablation_split cannot reach). Next: IDEA-016 (camera pose
+      text) as the geometry lever for the config perception half; IDEA-002 stays unpromoted.
+    R2_action_ignored: >
+      F-ignore or I-ignore (either one). The model answers from the scene, not the stated action; C-002's forces gain is
+      at least partly a scene/training prior. Next: IDEA-040 (training-answer prior baseline, no GPU) to size the prior
+      share, then IDEA-002 with the action in a position the model must use (displacement output).
+    R3_direction_read_magnitude_not: >
+      F-read and I-ignore (or I-part with s < 0.5). The direction is used but the impulse is mapped to a typical
+      displacement. Next: IDEA-002 with an impulse-sensitive target (displacement), and a val_ood_forces cf run (needs a
+      human change of ablation_split or a new pinned mode).
+    inconclusive: >
+      Any other combination, including F-part, validity failure, or [cfsign]/[cfdisp] unavailable and pinned errors
+      between bands. Reported verbatim, not retro-fitted; default next step IDEA-040 plus a human request to extend the
+      cf modes to val_ood_forces.
+  image_dependence: >
+    Report none/normal/swap-free results from the normal pass and none.jsonl only to confirm the repro (none 0.500 on
+    val_id for exp005). No image-dependence claim is made from the cf modes (image is normal in all of them).
+  objective_link: >
+    Forces supplies 78% of the exp000 per-split gain over static (exp000 review_post); whether that gain is action-
+    conditioned is the open question that decides between camera-conditioning ideas and a dynamics/prior ideas. It also
+    belongs to the image-dependence concern: a model that ignores the action and reads the image shows exactly the
+    scene-prior behaviour the supervisor asked about.
+  if_it_fails: >
+    If the model reads neither direction nor impulse (R2), the Task B 'dynamics' skill K measured in exp004 is a
+    scene-layout prior, and any dynamics-side improvement must first force action use. If it reads both (R1), the dynamics
+    side is functioning in-distribution and the OOD loss lies with perception/camera features, consistent with exp004's
+    perception 0.060 share and exp008's null for the output parameterisation.
+
+report_must_quote:
+  - "agent.sh results: metrics.json (primary reproduces 0.3160) and results.md val_id rows for normal, none, cf_flip, cf_impulse_0.5, cf_impulse_2 (Task A and B)"
+  - "compare ... --task B --splits val_id for each cf mode vs normal, with CIs, and E vs static 0.265"
+  - "agent.sh log exp009_exp005_cf_action 600: every [cfprompt], [cfdisp], [cfsign] line verbatim; the computed slope s and which of F-read/F-ignore/F-part and I-use/I-ignore/I-part fired"
+  - "the sentence 'val_id only; val_ood_forces action-dependence not tested' next to the headline"
+
+out_of_scope:
+  - "cf modes on val_ood_forces / other splits (ablation_split is val_id in the pinned policy; a human change would be needed)."
+  - "Counterfactual GT by re-simulation (the pinned scorer compares to the real GT; error rise is a sensitivity measure, not an accuracy)."
+  - "Any training run (IDEA-002/016) and any id_test/ood_* evaluation."
