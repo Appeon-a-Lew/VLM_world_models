@@ -654,3 +654,17 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - discriminates: "model does not predict falls near edges" (layout/prior problem) vs generic dynamics skill loss. Feeds IDEA-049 (state-only ceiling on the same strata).
 - cost: minutes, no GPU.
 - status: planned: exp006_exp005_direction_split (fall recall / false alarm part, rule R-D)
+
+## IDEA-053 Per-axis (camera x/y/z) signed displacement error on LR vs AT pushes, id vs elev vs elev_corner vs config
+- source: review of exp006_exp005_direction_split
+- background: exp006 found LR iso error rising on val_diag_elev (+0.041 [0.010, 0.074]) with cross error 0.022 -> 0.050, AT flat; but val_diag_elev_corner has the opposite ordering (LR e 0.061, AT 0.071; K 0.450 vs 0.335). LR cross-push error lies on camera y/z, the elevation-dependent axes, so "LR rises" may itself be a camera-frame effect (spurious y/z motion on a pure-x push), not evidence against one.
+- change: eval_only rerun of the exp005 adapter (0.23 GPU-h; fold into the IDEA-025/026 job) printing signed mean and mean-abs error per camera axis for pd - (gt1 - gt0), per direction group, on id / elev / elev_corner / config, with bootstrap CIs and the elev_corner DiD.
+- discriminates: elevation-dependent y/z leakage (camera-frame) vs noise in a single split.
+- status: proposed
+
+## IDEA-054 Off-table recall per split with CIs, threshold sweep, and a layout control
+- source: review of exp006_exp005_direction_split
+- background: fall recall is 0.351 on val_id but 0.06 to 0.17 on objects, count, corner, config, elev_corner, and 0.42 on elev. It is low on splits that are not config-specific, so the R-D "config layout prior" reading is not isolated; it may be a val_id-versus-everything-else gap. n_off is 27 to 78 per split. Recall uses the oracle-anchored displacement (privileged) and a fixed 0.5 m threshold.
+- change: eval-only: recall with CIs on every split, threshold sweep (0.3 / 0.5 / 0.7 m), recall conditional on GT displacement.
+- discriminates: config-specific failure vs generic OOD gap vs threshold artefact.
+- status: proposed
