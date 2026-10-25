@@ -3,6 +3,15 @@
 Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reason`, `needs-human: reason`).
 The planner re-ranks this file; the researcher and reviewer append to it.
 
+## Ranking (planner, 2026-10-25, round 10; spec: exp010_exp005_camera_pose_text; after exp009 R1)
+Inputs: exp009 report + review_post (R1 on val_id, tentative C-012), exp008 spec (R3 routes to IDEA-016), policy (12 GPU-h/day, 3.9 used; exp010 ~1.8). NG = no GPU, G = GPU. Observation shaping the ranking: forces dominates the primary (exp005 per split 0.161 / 0.515 / 0.272) and exp009's exploratory print shows OOD forces magnitude under-scaled (median 0.215 vs GT 1.257 m), whereas IDEA-016 can only move config (about -0.005 to -0.02 on the primary at best).
+1. IDEA-016 camera pose text (planned: exp010_exp005_camera_pose_text, G ~1.8 h). For: pre-registered route of exp009 R1 and exp008 R3; exp004 perception share 0.060 of the config shift; literature 2026_onecanvas, 2026_camera_robust_3d_tooluse. Against: 12-25 degrees is outside training 30-60 (digits may not extrapolate); config is 1/3 of the primary; single seed. Info: R1-R7 table, every cell routes (seed floor, IDEA-002, IDEA-019/013). Risk: prompt change in train and test only, no protected change; needs "centerpose" in check_spec STYLES (human, outbox).
+2. IDEA-043(b) seed-1 retrain (G 1.4 h): noise floor for every 0.005-0.01 train comparison (exp008 +0.010, exp010). Routed to by exp010 R1, R2, R4. Could be ranked first if the human prefers a calibrated floor before more train arms.
+3. IDEA-002 displacement output (G 1.4 h): now aimed at forces (largest primary component, magnitude under-scaled OOD). Risk: the OOD speeds 2.0-2.8 m/s are outside training, so a displacement head may under-scale too. Next after exp010 under R3/R5.
+4. IDEA-040 training-answer prior (NG, 0.5 day), IDEA-055, IDEA-057 (needs 0.25 G eval_only), IDEA-054 (NG).
+5. needs-human: IDEA-060 (cf on shifted splits incl. forces), IDEA-061 (alpha 0.8/1.25 and s CI, new pinned modes), IDEA-062 (paraphrase modes). Outbox note updated. IDEA-045/046 (dependency).
+6. Demoted: IDEA-021 (same extrapolation risk as 016), IDEA-014/015/059, IDEA-018/005.
+
 ## Ranking (planner, 2026-10-25, round 9; spec: exp009_exp005_cf_action; after exp008 not-supported)
 Inputs: exp008 report (uvz not supported, routing inconclusive, default action IDEA-002 or IDEA-025/026), exec.py ABLATION_MODES and check_spec.py (cf_* modes confirmed; main's infer.py/prompts.py do not implement them, so the worktree must). NG = no GPU, G = GPU.
 1. IDEA-025 + 026 (planned: exp009_exp005_cf_action, G ~0.4 h, budget 0.75). For: exp004/006/007 never tested whether the action text is used; forces is 78% of the exp000 gain (exp000 review_post); QuantiPhy (research/literature/2026_quantiphy.md) predicts prior anchoring. Pinned scoring against real GT gives the sensitivity with paired CIs, plus print-only slope and sign lines. Against: val_id only (ablation_split), so val_ood_forces untested; impulse x2 leaves the training speed range. Effect on primary: none; info: high, each outcome (R1 used / R2 ignored / R3 direction-only) picks the next spec. Risk: infer-time prompt code only, no protected change.
@@ -267,7 +276,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - change: add the camera elevation and distance (or the table-plane normal and offset in the camera frame, from `cam2world`) to the prompt text
 - expected: some reduction of Task A error on val_ood_config. It may fail because 12–25° is numerically outside training, which would be informative when contrasted with IDEA-013.
 - cost: prompt change plus 1 SFT run (about 1.4 GPU h)
-- status: proposed
+- status: planned: exp010_exp005_camera_pose_text (elevation + distance sentence, style centerpose; azimuth omitted because it does not change camera-frame geometry)
 
 ## IDEA-017 Factorised val_ood_config diagnostic splits
 - source: research/literature/2025_limits_of_finetuning.md
@@ -723,7 +732,7 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - background: exp009 R1 is val_id only. exp006/007's LR/AT probe lives on config/elev, where the action text may be mapped worse (camera-frame confound, IDEA-050). A val_id result cannot show that AT labels still mean the right image axis at elevation 25+.
 - change: eval-only on the exp005 adapter, cf_flip with cfsign split per label (LR vs AT) on val_ood_config, val_diag_elev, val_diag_corner and val_ood_forces. Needs a human change of ablation_split or a new pinned mode.
 - discriminates: lexical token->direction mapping that is camera-invariant vs a camera-frame mapping that degrades with elevation; also whether forces-split displacement tracks the impulse (normal-pass print: non-sphere median dhat 0.215 vs GT 1.257).
-- status: proposed
+- status: needs-human: ablation_split is pinned to val_id (outbox/needs_human_check_spec_centerpose_style.md, second part)
 
 ## IDEA-061 Dose-response and in-range impulse control (alpha 0.8/1.25 plus in-range subset)
 - source: review of exp009_exp005_cf_action

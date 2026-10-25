@@ -100,6 +100,9 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 ## Next (planner, 2026-10-25 round 9)
 exp009_exp005_cf_action planned (IDEA-025+026, eval-only on the exp005 adapter, val_id, budget 0.75 GPU-h): does the model use the action text? Pre-registered readout rules and routes R1 (used -> IDEA-016), R2 (ignored -> IDEA-040 then IDEA-002), R3 (direction only -> IDEA-002) are in the spec. The worktree must implement the cf modes in prompts.py/infer.py; real-episode check is the [cfprompt] job.log lines (no agent.sh op runs custom code). Runners-up: IDEA-040, IDEA-057, IDEA-002.
 
+## Next (planner, 2026-10-25 round 10)
+exp010_exp005_camera_pose_text planned (IDEA-016, train 1.4 GPU-h, budget 3, day usage 3.9 + ~1.8 < 12): one prompt sentence with camera elevation and distance in training and test. Pre-registered classes P_down/flat/up (primary vs 0.3160, 0.311/0.321 limits) x T_big/part/none (config Task A vs 0.137, 0.107/0.127) give a 9-cell routing R1-R7 in the spec. Needs "centerpose" added to check_spec STYLES (human, outbox). Runners-up: IDEA-043(b) seed floor, IDEA-002 (aimed at forces, which dominates the primary and is under-scaled OOD), IDEA-040. IDEA-060 (cf on shifted splits) is needs-human (pinned ablation_split).
+
 ## Open questions
 - Why does zero-shot exp002 do worse with the correct image than with a swapped one: a frame flip or offset, or hedging toward a default output? (IDEA-024/028/032)
 - exp000's val_ood_config failure isn't explained by any single factor (exp003). Is it an interaction (elev × corner, IDEA-036) or additive? Is the lost dynamics gain lost skill, or harder multi-body contact (IDEA-035)? Does the split depend on the decomposition path (IDEA-034)?

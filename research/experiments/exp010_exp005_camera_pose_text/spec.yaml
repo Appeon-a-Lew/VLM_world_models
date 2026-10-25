@@ -1,0 +1,149 @@
+id: exp010_exp005_camera_pose_text
+# IDEA-016 (planner 2026-10-25, round 10). Routed here by exp009 R1 (action used on val_id, so the exp006/007 nulls are
+# not "action ignored") and by exp008 R3 (output parameterisation is not the lever). Training run: exp005 recipe with
+# one extra prompt sentence stating the camera elevation and distance.
+hypothesis: >
+  (IDEA-016) Stating the camera elevation (degrees above the table plane) and distance (m) in the prompt, in training
+  and at inference, lowers the Task A error on val_ood_config (exp005: 0.137) by at least 0.03 m and lowers the primary
+  metric (val OOD Task B target mean) below exp005's 0.3160 by more than the 0.005 m threshold, because the
+  elevation-dependent mapping from pixels to camera-frame y/z becomes an explicit input instead of something the
+  model must infer from the image. Predicted direction: primary down (about -0.005 to -0.02: only config is expected
+  to move, it is 1/3 of the mean, and the perception share of its shift is about 0.06 of 0.14, exp004).
+  Failure modes (both informative): the 12-25 degree values lie outside the training range 30-60, so the digits
+  may not extrapolate (Task A config flat); or the model ignores the sentence.
+change: >
+  Add one sentence "The camera looks down at the table from an elevation of E degrees above the table plane, at a
+  distance of D m." (E to 0 decimals, D to 2 decimals, from ep.camera.elevation_deg / ep.camera.distance) to the
+  Task A and Task B prompts under a new style "centerpose", used in both SFT and inference; the answer format,
+  data, LoRA, lr, epochs, seed and metrics are unchanged.
+baseline: exp005_exp000_repro
+kind: train
+train_config: configs/sft_qwen3vl2b_pose.yaml   # copy of sft_qwen3vl2b.yaml plus `style: centerpose` and a new `out:`
+style: centerpose                               # inference prompt style (parse as center)
+ablations: [none, swap]                         # blank dropped: blank-vs-none order flipped in exp005 (C-001 caveat)
+budget_hours: 3                                 # train ~1.4 + val/diag inference + 2 ablations ~0.4; day usage 3.9 + ~1.8 < 12
+seed: 0
+
+implementation:
+  - >
+    Fresh worktree off main. No change to pinned files, pyproject.toml, parse.py or the reference config. Files touched:
+    physwm/vlm/prompts.py, physwm/vlm/infer.py, physwm/vlm/sft.py (only if main does not already read `cfg.get("style",
+    "center")`), configs/sft_qwen3vl2b_pose.yaml (new), tests/test_prompt_pose.py (new).
+  - >
+    physwm/vlm/prompts.py: add style "centerpose". In prompt_text, for this style only, insert after the FRAME sentence
+    (same line) the sentence f"The camera looks down at the table from an elevation of {ep.camera.elevation_deg:.0f}
+    degrees above the table plane, at a distance of {ep.camera.distance:.2f} m." and use the "center" format line.
+    target_text is unchanged (same camera-frame centre targets, same style). The "center" and "qwen3d" paths must
+    stay byte-identical to main (tested).
+  - >
+    physwm/vlm/infer.py: add "centerpose" to --style choices; call parse_answer with style "center" for it (an
+    explicit map, not a fallthrough). Print-only, guarded by try/except, leading newline, flush=True, on every pass:
+    (i) "[poseprompt] split n_with_pose n_total" counting Task A and Task B prompts containing "degrees above the table
+    plane" (must be n_total == n_total) plus the first 2 prompts of val_id and of val_ood_config verbatim;
+    (ii) "[poseerr] split bin n taskA_mean" for the normal pass: Task A all-object mean error by elevation bin
+    (<15, 15-25, 25-30, 30-40, 40-50, 50-60 degrees) on val_id, val_diag_elev, val_ood_config, so the elevation
+    dependence of the error is visible whether or not the primary moves. Never written to a pred file.
+  - >
+    physwm/vlm/sft.py: SFTData uses style = cfg.get("style", "center") for prompt_text/target_text (skip this edit if
+    main already does it, e.g. after exp008 merged; the default config has no style key so exp005 behaviour is
+    unchanged). configs/sft_qwen3vl2b_pose.yaml: identical to configs/sft_qwen3vl2b.yaml except `style: centerpose` and
+    `out: /var/tmp/toyi/wm/runs/sft_qwen3vl2b_pose`. Not in PINNED_FILES, so no re-pin.
+  - >
+    tests/test_prompt_pose.py (preflight gate, `pytest -x tests`): the "center" prompt for 5 train episodes is
+    byte-identical to main's; the "centerpose" prompt equals the "center" prompt plus exactly the one sentence (strip
+    it and compare); the sentence reads the right episode fields (an episode with elevation 17.4 and distance 1.05
+    gives "17 degrees" and "1.05 m"); target_text is identical across the two styles; Task A and Task B both carry
+    the sentence; an unknown style raises.
+  - >
+    No agent.sh operation runs custom code on the GPU box, so no real-episode pre-submit check is possible. The real-data
+    check is the [poseprompt] lines in job.log (n_with_pose == n_total for every split, sentences visibly correct),
+    read with `agent.sh log exp010_exp005_camera_pose_text 600` after the run, and the unit tests before submit.
+    Style "centerpose" must be in STYLES of scripts/check_spec.py on main (human edit, see
+    research/outbox/needs_human_check_spec_centerpose_style.md); run python3 scripts/check_spec.py on this spec, commit,
+    keep the worktree clean, submit. Evaluate val_* only; no id_test/ood_* run.
+
+success_criterion:
+  calibration_from_exp005: >
+    All from existing records (IDEA-056). exp005 val_id: Task A all_mean 0.0152, Task B target 0.157 (static 0.265),
+    none 0.500, swap 0.406, gap 0.343. Task A per split: objects 0.023, forces 0.016, config 0.137, diag count 0.021,
+    elev 0.084, corner 0.079, elev_corner 0.122. Task B target per split: objects 0.161, forces 0.515, config 0.272
+    (static 0.241); primary 0.3160, static 0.3790. Reproduction noise exp000 vs exp005: primary 0.0024, config Task A
+    0.001 (0.136 vs 0.137), per-split Task B within 0.015; one seed, so the 0.005 threshold is above the noise but not
+    by much. Derived limits: validity 2x exp005 on val_id (Task A <= 0.030, Task B target <= 0.200); config Task A
+    classes use the 0.030 target drop (about half of the 0.06 perception share) and a 0.010 'no change' band (10x the
+    0.001 repro noise on that quantity).
+  validity_gate: >
+    Interpretable only if parse_rate_min >= 0.99, missing <= 0.01 on every val split, val_id Task A all_mean <= 0.030,
+    val_id Task B target mean <= 0.200, and [poseprompt] shows n_with_pose == n_total on every printed split (else the
+    pose sentence was not applied at test time). A failure routes R7 (no conclusion).
+  primary_metric: >
+    P = val OOD Task B target mean; difference d = P - 0.3160 from `agent.sh compare exp010_exp005_camera_pose_text
+    exp005_exp000_repro` (paired bootstrap CI). Classes (total and disjoint, by point value then CI):
+    P_down = P <= 0.311 AND CI upper bound of d < 0;
+    P_up   = P > 0.321;
+    P_flat = every other value (includes P <= 0.311 with the CI reaching 0, and 0.311 < P <= 0.321).
+    Always also report vs static 0.379.
+  per_split: >
+    T = val_ood_config Task A all_mean (results.md; exp005 0.137), classes: T_big = T <= 0.107 (drop >= 0.030);
+    T_part = 0.107 < T <= 0.127; T_none = T > 0.127 (includes worse). Report Task A and Task B target for val_id,
+    objects, forces, config and the diag splits against exp005 with per-split CIs (`compare --splits`). Descriptive,
+    not in the routing: diag elev Task A (exp005 0.084; a hit would be <= 0.064). Guard, reported not routed: forces
+    Task B (exp005 0.515) and objects (0.161) must not worsen by more than 0.03 each; a violation is stated next to
+    whichever route fires and the adoption in R1 is then made conditional on it.
+  image_dependence: >
+    Gap = none minus normal on val_id Task B target (exp005 0.343); also swap minus normal (exp005 0.249). Gap within
+    +/-0.05 of exp005 is not interpreted; a smaller gap means the pose text lets the model lean less on the image.
+    Both none and swap must stay worse than static 0.265 on val_id to say image dependence is retained (C-001). Caveat:
+    none keeps the pose sentence, so a text-only model now also knows the camera; a smaller none-error is expected and
+    is not evidence about the image. Do not use blank.
+  routing:
+    # Rows P, columns T. Each of the 9 cells is in exactly one route. Validity failure: R7 regardless of cell.
+    #              T_big   T_part   T_none
+    #   P_down     R1      R1       R2
+    #   P_flat     R3      R4       R5
+    #   P_up       R3      R6       R6
+    R1_pose_text_helps: >
+      (P_down, T_big|T_part). Camera pose text is a lever. Adopt as base only if the forces/objects guard holds. Next:
+      IDEA-043(b) seed-1 retrain of exp005 (noise floor for a 0.005-0.01 gain), then IDEA-060 (cf_flip on shifted
+      splits, needs-human) and IDEA-002 on the pose base.
+    R2_primary_down_without_perception: >
+      (P_down, T_none). The primary improved but config Task A did not: the gain is not the stated mechanism (the pose
+      text may help dynamics or the other splits, or it is run-to-run noise). Do not adopt on this evidence; next
+      IDEA-043(b) seed floor, and read per-split Task B CIs before any claim.
+    R3_perception_up_dynamics_not: >
+      (P_flat|P_up, T_big). Config Task A improved by >= 0.03 but the primary did not follow: the pose text fixes
+      perception on the shifted camera and the remaining loss is dynamics or other splits (forces dominates the
+      primary: exp005 forces 0.515 vs config 0.272). Keep pose text only if simpler-or-equal elsewhere; next IDEA-002
+      (displacement output) aimed at forces, and the IDEA-060 request.
+    R4_small_inconclusive: >
+      (P_flat, T_part). A partial Task A change with a flat primary; reported verbatim, not adopted. Next IDEA-043(b)
+      before any further camera-conditioning idea.
+    R5_no_effect: >
+      (P_flat, T_none). The model does not use the sentence, or the 12-25 degree digits do not extrapolate (check
+      [poseerr]: error by elevation bin; a flat curve under the same bins as exp005 says ignored). Camera-pose text
+      is not a lever as a prompt; next IDEA-019 (K-varying crops) or IDEA-013 (per-patch xyz), or IDEA-002 if
+      forces is the bigger lever. IDEA-021 (FiLM on pose) stays low (same extrapolation risk).
+    R6_worse: >
+      (P_up, T_part|T_none). The sentence hurts (primary > 0.321 without a perception gain); drop IDEA-016/021 and
+      record the caveat that a number the model has never seen can distract it.
+    R7_invalid: >
+      Validity gate failed. No conclusion; fix and rerun under a new id once.
+  objective_link: >
+    Tests the camera-frame (elevation) share of the val_ood_config perception loss (exp004 Shapley about 0.060 of
+    0.140) with the cheapest geometry input. It does not touch forces, which dominates the primary; the routing says
+    so explicitly (R3). Image-dependence stays under the none/swap guard.
+  if_it_fails: >
+    R5 removes camera-pose text and, by the same extrapolation argument, FiLM on pose (IDEA-021), and moves effort to
+    input-side geometry (IDEA-013/020, K-crops IDEA-019) or the forces magnitude problem (IDEA-002). One seed: any
+    difference under 0.01 is reported with its CI and not over-read; R2/R4 explicitly route to the seed-floor run.
+
+report_must_quote:
+  - "agent.sh results: metrics.json (primary, gap, parse) and results.md rows for val_id, objects, forces, config, diag elev/count/corner/elev_corner (Task A and B) for normal, none, swap"
+  - "compare exp010_exp005_camera_pose_text exp005_exp000_repro (primary) and --splits for config, elev, forces, objects, with CIs, and vs static 0.379"
+  - "agent.sh log exp010_exp005_camera_pose_text 600: every [poseprompt] and [poseerr] line verbatim, and which of P_down/P_flat/P_up, T_big/T_part/T_none and R1-R7 fired"
+  - "the sentence 'single seed; differences under 0.01 not interpreted without a seed-floor run' next to the headline"
+
+out_of_scope:
+  - "Distance-only or elevation-only arms (the two fields are one change here; split later if R1 fires)."
+  - "Counterfactual pose text at test time (needs a new pinned mode, see IDEA-060 outbox) and any id_test/ood_* evaluation."
+  - "FiLM/embedding variants (IDEA-021) and any change of output format or data."
