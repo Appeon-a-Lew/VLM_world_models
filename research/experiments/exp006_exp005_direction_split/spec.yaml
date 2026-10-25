@@ -99,6 +99,15 @@ decision_criteria:
     diagnostic). Otherwise the off-table loss is magnitude/direction error, no extra routing.
     If R-A and R-D both fire, report both and prefer IDEA-016 since it is one 1.4 GPU-h run on a
     reviewed mechanism; the off-table half is flagged as unaddressed.
+    Gap cases (pre-registered before any [direction] line is read; R-A not firing does not mean R-B fired):
+    G1 DiD >= 0.02 m with CI lower bound > 0 but cross share < 0.5: "camera-frame, along-push dominated".
+    Report it; next spec IDEA-025/026 (no 1.4 GPU-h training run on IDEA-016).
+    G2 0.01 <= DiD < 0.02: weak or ambiguous. Report as point-estimate only; next spec IDEA-025/026.
+    G3 DiD <= -0.01 m (left/right rises more than away/toward): contradicts the camera-frame story.
+    Report it, do not run IDEA-016; next spec IDEA-025/026.
+    Any other combination not covered by R-A..R-C or G1-G3 (including R-A with CI lower bound <= 0):
+    report it and route to IDEA-025/026. Quote disp per cell, since DiD can reflect GT displacement
+    differences between LR and AT cells. R-D is read independently of G1-G3.
     Thresholds are on point estimates; any call whose CI crosses the threshold is flagged
     "point-estimate only" and routes to the next-cheaper (025/026) rather than a training run.
 
