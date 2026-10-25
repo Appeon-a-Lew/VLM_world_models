@@ -687,3 +687,24 @@ Ranked (rank. idea: for / against; effect on primary; cost; risk; information va
 - background: the 0.01 m LR |y|+|z| limit failed on val_id itself (0.030 m).
 - change: derive any validity threshold on a data property from a printed val_id value plus tolerance, and record the derivation in the spec.
 - status: proposed
+
+## IDEA-057 Per-axis (x, y, z) Task A error of exp005 on config/elev/corner, with CIs
+- source: review of exp008_uvz_output
+- background: exp008's print-only line shows uvz depth median |dz| 0.128 m on config vs 0.012 on val_id while 2D error is about 1 px. The report infers "perception error on config is mostly depth" for uvz only; no center-style (exp005) per-axis number exists, so it is unknown whether depth dominates there too or whether uvz moved error into z.
+- change: eval-only/CPU on exp005 Task A pred files: signed and absolute z (camera depth) error versus lateral (x, y) error per split, median and mean, with bootstrap CIs by episode; also signed dz vs GT z for exp008 (shrinkage toward training depth range vs bias).
+- discriminates: depth as the shared bottleneck vs a uvz-specific artefact; regression-to-train-depth vs elevation-dependent bias.
+- status: proposed
+
+## IDEA-058 Off-image fraction and Task B u/v analysis for exp008 (post hoc, needs the pred files)
+- source: review of exp008_uvz_output
+- background: the spec's report_must_quote off-image fraction was never computed; job.log does not print it and the pred files live on the executor box (nc-10-4-3).
+- change: eval_only/CPU job that reads exp008 pred/normal.jsonl and GT, projects with K, reports fraction of u or v outside 0-1000 for pred and GT per val split, plus Task B error split by off-image vs on-image GT.
+- discriminates: R4's "dynamics answer leaves the image" reading vs depth-driven loss.
+- status: proposed
+
+## IDEA-059 Center-style run with the FRAME sentence removed (confound control, only if representation is revisited)
+- source: review of exp008_uvz_output
+- background: exp008 bundled FRAME removal with the format change; it worsened primary by +0.010 and Task A on all shifted splits. The FRAME sentence may itself help (camera-frame cue) so part of the worsening may be FRAME removal.
+- change: exp005 recipe, prompt without FRAME, center output.
+- discriminates: representation cost vs prompt-cue loss. Cheap (1.4 GPU-h) but low priority given R3/R4 default action.
+- status: proposed

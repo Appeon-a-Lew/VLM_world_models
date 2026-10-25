@@ -176,3 +176,13 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - Oracle path mixes separate Task A and Task B generations (unmoved error 0.010 m config vs 0.006 id; gate passed at 0.05 m).
   - Single adapter and seed. n_cont = 31 on val_id.
   - Extends but does not replace C-006 and C-007. The C-007 own-path perception/dynamics split is unchanged and still point-estimate only.
+
+## C-011 Writing the Task A/B answer as pixel centre plus depth ([u, v, z], decoded with K) does not improve the exp005 recipe and is slightly worse (one seed, FRAME sentence removed in the same change)
+- **claim**: exp008 (uvz) has a higher val OOD Task B target mean than exp005, by +0.0104 [0.0041, 0.0165] (0.3264 vs 0.3160). Task A is worse on every shifted split (config 0.145 vs 0.137), so the output parameterisation is not the lever for the config perception error. Descriptive only: under uvz the 2D error is about 1 px everywhere and the median depth error is 0.128 m on config, 0.120 elev_corner, 0.078 elev, 0.082 corner against 0.012 on val_id.
+- **evidence**: exp008_uvz_output (commit 804614437a, 1.51 GPU-h) vs exp005_exp000_repro. Task B: objects +0.0091 [0.0014, 0.0166], forces +0.0095 [-0.0058, 0.0245], config +0.0125 [0.0047, 0.0201], val_id +0.0172 [0.0042, 0.0294]. Task A all_mean diff over config/elev/corner/elev_corner/val_id +0.0089 [0.0080, 0.0099]; config +0.0081 [0.0058, 0.0102], elev +0.0064 [0.0043, 0.0085], corner +0.0148 [0.0121, 0.0176], elev_corner +0.0152 [0.0125, 0.0178], val_id +0.0002 [-0.0006, 0.0010]. vs static -0.0526 [-0.0621, -0.0429]; config still worse than static (+0.0439 [0.0302, 0.0576]). Gap none-normal 0.378 [0.346, 0.409] vs exp005 0.343 [0.310, 0.376]; both ablations worse than static (C-001 retained).
+- **status**: tentative
+- **caveats**:
+  - Single seed; 0.0024 reproduction noise floor. The Task B diff is about 2x the 0.005 threshold, so it is "worse, small".
+  - FRAME sentence removal is bundled with the format change; the effect cannot be attributed to the pixel representation alone.
+  - Spec's real-episode pre-submit check waived; per-split missing rate and off-image fraction not verified. val_id Task A parity with exp005 argues the codec works.
+  - The depth statement is medians from a print-only line, uvz only, no CI, no exp005 depth comparison (IDEA-057), so "depth carries the config error" is not a claim about the center format.

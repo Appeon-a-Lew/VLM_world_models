@@ -103,3 +103,6 @@ Per-split Task B target mean (exp000 / static): objects 0.161 / 0.232, forces 0.
 - Does exp000 use the stated impulse on val_ood_forces, or does it predict training-typical motion? (IDEA-008)
 - Are the per-split differences outside the noise? `compare` now gives per-split CIs (IDEA-009 done); exp000 per-split CIs not yet computed.
 - If the camera turns out to be the cause, which geometric input fixes it: per-patch xyz (IDEA-013), uv + depth output (IDEA-014), camera pose text (IDEA-016), or K-varying crops (IDEA-019)?
+
+## exp008 findings (2026-10-25)
+uvz output (IDEA-014) not supported: primary 0.3264 (exp005 0.3160, +0.0104 [0.0041, 0.0165]); Task A worse on every shifted split, equal on val_id; routing inconclusive (R3/R4 overlap), uvz not adopted. Descriptive (uvz only): shifted-view Task A error is depth (median |dz| 0.012 m val_id -> 0.128 m config), 2D about 1 px. Caveats: real-episode pre-submit check waived; per-split missing rate and off-image fraction unverified. Open ideas: IDEA-057 (exp005 per-axis Task A), IDEA-058 (off-image/missing post hoc), IDEA-059 (center, no FRAME). Executor now nc-10-4-3; cf_flip/cf_impulse modes available, so IDEA-025/026 unblocked.
