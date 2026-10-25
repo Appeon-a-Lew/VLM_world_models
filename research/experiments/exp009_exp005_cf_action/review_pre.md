@@ -36,3 +36,27 @@ Reviewed: spec.yaml on main 1c5405f, worktree commit 9486052 (3 files: infer.py,
 - Budget 0.75 h. The normal pass over all val and diag splits plus four val_id passes looks adequate relative to the earlier eval-only runs. I did not verify exp005's wall-clock time here.
 
 After fix 1, I expect to APPROVE without further code changes (round 2 only re-reads the spec).
+
+# Round 2
+
+Verdict: **APPROVE** (spec on main 41f91d1; code unchanged, worktree 9486052, not re-read beyond the unchanged-commit statement).
+
+## Decision table: total and non-overlapping
+- Outcome definitions are exclusive. F-read needs E_flip >= 0.265, so the rise is at least 0.108 (normal 0.157), while F-ignore needs rise <= 0.02. F-part is the explicit catch-all. I-use needs s >= 0.8 and I-ignore needs s <= 0.3. I-part is the catch-all. So each run lands in exactly one F and one I value.
+- The 3x3 table gives each pair exactly one route: F-read gives R1 / (R3 if s<0.5 else INC) / R3. F-part gives INC for all three. F-ignore gives R4 / R2 / R2.
+- It matches the route texts. R2 is F-ignore with (I-ignore or I-part). R3 is F-read with (I-ignore, or I-part and s<0.5), and it states that I-part with s>=0.5 or s not estimable is INC. R4 is F-ignore with I-use, and it is treated as inconclusive. R1 is F-read with I-use. The inconclusive text lists the same cells. The previous overlap (F-read with I-ignore in both R2 and R3) and the gap (F-ignore with I-use) are closed.
+- Gate 1-4 failures give INC regardless of cell. The [cfsign] clause is dropped without changing the table.
+
+## Gate-5 slope-unavailable rule
+- It is consistent. I-use cannot fire without s, which matches "the pinned rises alone never give I-use". I-ignore from both |rises| <= 0.02 is conservative in the direction that matters, because it needs a smaller effect than I-use does. F-read with I-part and no slope gives INC, which matches R3's text.
+- The one weakness is that I-ignore can then fire from rises alone (without the slope s <= 0.3 check). That can send F-read to R3 or F-ignore to R2 without the slope. The rises are computed on all targets, so the claim is only as strong as the 0.02 band. The report must state "I-ignore by rises only, slope not estimable" whenever this happens. This is non-blocking.
+
+## Gate 2 jitter text
+Acceptable with one wording slip. If the Task A raw strings are identical, the scored values are identical, so "treat it as scoring jitter" cannot arise from identical strings. The sensible reading is: identical raw strings mean the gate effectively passes and the report notes it. A string difference with a tiny score gap is bf16 padding jitter. Please read it that way in the report. Also check that the pred records keep the raw string. If they do not, compare the parsed values instead. Non-blocking.
+
+## F-ignore CI wording
+Fine. Rise <= 0.02 and CI upper < 0.04 is explicit. A wide CI gives F-part by pre-registration, and the report must give the CI width. The 0.75 * frac_pos(normal) clause is relative to the normal pass and is dropped if [cfsign] is invalid.
+
+## Other residual notes (non-blocking)
+- The I-use definition line does not itself list the ordering d(0.5) < d(1) < d(2). The preceding sentence says to "require" it for "used", and the Limits paragraph repeats it. The report must apply it.
+- The routes are fixed before any cf line is read. No new fixes are required, and the round 1 non-blocking notes still stand.
