@@ -1,0 +1,7 @@
+# Diagnostic (validation only): the tight corner cluster of ood_config alone (training count and camera).
+base: sim_train.yaml
+name: diag_corner
+objects:
+  min_gap: 0.01
+  region: [0.12, 0.1]
+  region_center: [0.3, 0.18]

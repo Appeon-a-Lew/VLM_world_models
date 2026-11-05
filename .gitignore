@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+data/
+runs/
+outputs/
+*.egg-info/
+work/
+viz/
+.pytest_cache/
+MUJOCO_LOG.TXT
