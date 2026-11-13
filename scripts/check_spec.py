@@ -45,8 +45,12 @@ def main(path):
         if not cfg.is_file():
             errors.append(f"train_config not found: {cfg}")
         else:
-            split = yaml.safe_load(cfg.read_text()).get("train_split")
-            held_out = set(policy["data"]["protected_splits"]) | set(policy["data"]["validation_splits"])
+            train_cfg = yaml.safe_load(cfg.read_text())
+            split = train_cfg.get("train_split")
+            if train_cfg.get("seed") != spec.get("seed"):
+                errors.append("spec seed must match the training config seed")
+            held_out = (set(policy["data"]["protected_splits"]) | set(policy["data"]["validation_splits"])
+                        | set(policy["data"].get("diagnostic_splits", [])))
             if split in held_out or str(split).startswith(("val", "ood", "id_test")):
                 errors.append(f"train_split '{split}' is a held-out split")
     print(json.dumps({"spec": str(spec_path), "ok": not errors, "errors": errors,

@@ -6,8 +6,7 @@
 set -euo pipefail
 R=${RUNS:-$WM/runs}
 D=$WM/data
-TEST="id_test ood_objects ood_forces ood_config"
-ZS_LIMIT=${ZS_LIMIT:-500}          # episodes per split for zero-shot (the base model is slow + weak)
+TEST="val_id val_ood_objects val_ood_forces val_ood_config"
 SFT=$R/sft_qwen3vl2b
 stages=${*:-baselines zeroshot sft eval_sft ablate table}
 
@@ -16,7 +15,7 @@ baselines)
   python -m physwm.eval.baselines --data $D --splits $TEST --out $R/baselines ;;
 zeroshot)
   for style in qwen3d center; do
-    python -m physwm.vlm.infer --data $D --splits $TEST --limit $ZS_LIMIT --style $style \
+    python -m physwm.vlm.infer --data $D --splits $TEST --style $style \
       --batch-size 32 --out $R/zeroshot/$style.jsonl
   done ;;
 sft)
@@ -26,7 +25,7 @@ eval_sft)
     --out $R/sft_eval/normal.jsonl ;;
 ablate)
   for mode in none blank swap; do
-    python -m physwm.vlm.infer --data $D --splits id_test --lora $SFT/adapter --image-mode $mode \
+    python -m physwm.vlm.infer --data $D --splits val_id --lora $SFT/adapter --image-mode $mode \
       --batch-size 32 --out $R/sft_eval/$mode.jsonl
   done ;;
 table)

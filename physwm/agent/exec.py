@@ -147,6 +147,8 @@ def validate_spec(spec: dict, code: Path) -> dict:
             raise Denied(f"spec missing '{k}'")
     if spec["kind"] not in ("train", "eval_only"):
         raise Denied("kind must be train | eval_only")
+    if "eval_limit" in spec and (type(spec["eval_limit"]) is not int or spec["eval_limit"] <= 0):
+        raise Denied("eval_limit must be a positive integer")
     if not (0 < float(spec["budget_hours"]) <= res["large_experiment_max_hours"]):
         raise Denied(f"budget_hours must be in (0, {res['large_experiment_max_hours']}]")
     if sha(code / "pyproject.toml") != sha(MAIN / "pyproject.toml"):
@@ -154,10 +156,13 @@ def validate_spec(spec: dict, code: Path) -> dict:
     for f in ("configs/research_agent_policy.yaml", "manifests/final_test.json"):
         if (code / f).exists() and sha(code / f) != sha(MAIN / f):
             raise Denied(f"experiment modifies protected file {f}")
-    protected = set(POLICY["data"]["protected_splits"]) | set(POLICY["data"]["validation_splits"])
+    protected = (set(POLICY["data"]["protected_splits"])
+                 | set(POLICY["data"]["validation_splits"]) | set(DIAG_SPLITS))
     if spec["kind"] == "train":
         cfg_path = code / spec["train_config"]
         tcfg = yaml.safe_load(cfg_path.read_text())
+        if tcfg.get("seed") != spec["seed"]:
+            raise Denied("spec seed must match the training config seed")
         if tcfg["train_split"] in protected:
             raise Denied(f"training on {tcfg['train_split']} is not allowed")
         if Path(tcfg["data"]).resolve() != DATA.resolve():
@@ -296,21 +301,28 @@ def evaluate_experiment(exp: str, splits_key: str = "validation_splits", tag: st
     """Score with the pinned main-copy metrics. Writes results{tag}.md and metrics{tag}.json."""
     import numpy as np
 
-    from physwm.eval.metrics import load_predictions, summarize
+    from physwm.eval.metrics import load_predictions, summarize, validate_coverage
     from physwm.schema import load_split
 
     check_pinned()
     exp_dir = EXPS / exp
     splits = POLICY["data"][splits_key]  # the metrics below use these only
     shown = splits + (DIAG_SPLITS if splits_key == "validation_splits" else [])
-    episodes = {ep.episode_id: ep for s in shown for _, ep in load_split(DATA, s)}
+    spec = json.loads((exp_dir / "spec.json").read_text())
+    limit = spec.get("eval_limit") if not tag else None
+    episodes = {ep.episode_id: ep for s in shown for _, ep in load_split(DATA, s)[:limit]}
     base_dir = AGENT / ("val_baselines" if splits_key == "validation_splits" else "final_baselines")
     preds = {"static": base_dir / "static.jsonl", "const_velocity": base_dir / "const_velocity.jsonl"}
     for f in sorted((exp_dir / f"pred{tag}").glob("*.jsonl")):
         preds[f"{exp}:{f.stem}"] = f
     rows = []
     for name, path in preds.items():
-        for r in summarize(load_predictions(path), episodes):
+        cohort = episodes
+        if name.startswith(f"{exp}:") and name != f"{exp}:normal":
+            cohort = {eid: ep for eid, ep in episodes.items() if ep.split == POLICY["data"]["ablation_split"]}
+        predictions = load_predictions(path)
+        validate_coverage(predictions, cohort, ("B",) if name in BASELINE_NAMES else ("A", "B"))
+        for r in summarize(predictions, cohort):
             rows.append({"method": name, **r})
 
     def get(method, split, task, col):
@@ -337,7 +349,7 @@ def evaluate_experiment(exp: str, splits_key: str = "validation_splits", tag: st
     for k, v in metrics.items():
         if isinstance(v, float) and not np.isfinite(v):
             raise ValueError(f"invalid metric {k}={v}")
-    cols = ["method", "split", "task", "episodes", "parse_rate", "all_mean", "target_mean",
+    cols = ["method", "split", "task", "episodes", "parse_rate", "missing_rate", "all_mean", "target_mean",
             "target_median", "target_skill", "moved_mean", "unmoved_mean"]
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     for r in sorted(rows, key=lambda r: (r["task"], r["split"], r["method"])):
@@ -370,7 +382,7 @@ def _episode_errors(method: str, splits: list[str], task: str) -> dict[str, dict
     unparsed (worst case), but a split with no predictions at all is refused."""
     import numpy as np
 
-    from physwm.eval.metrics import load_predictions, per_object_rows
+    from physwm.eval.metrics import load_predictions, per_object_rows, validate_coverage
     from physwm.schema import load_split
 
     exp, _, mode = method.partition(":")
@@ -382,12 +394,14 @@ def _episode_errors(method: str, splits: list[str], task: str) -> dict[str, dict
         raise Denied(f"method must be static, const_velocity or exp_id[:image_mode], got {method!r}")
     if not path.exists():
         raise Denied(f"no validation predictions for {method}")
-    preds = {p["episode_id"]: p for p in load_predictions(path) if p["task"] == task}
+    records = [p for p in load_predictions(path) if p["task"] == task]
+    preds = {p["episode_id"]: p for p in records}
     out = {}
     for s in splits:
         eps = [ep for _, ep in load_split(DATA, s)]
         if not any(ep.episode_id in preds for ep in eps):
             raise Denied(f"{method} has no Task {task} predictions on {s}")
+        validate_coverage(records, {ep.episode_id: ep for ep in eps}, (task,))
         out[s] = {}
         for ep in eps:
             rows = per_object_rows(preds.get(ep.episode_id, {"task": task, "objects": {}}), ep)

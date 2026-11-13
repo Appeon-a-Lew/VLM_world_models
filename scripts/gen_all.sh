@@ -6,7 +6,7 @@ OUT=${OUT:-$WM/data}
 W=${WORKERS:-20}
 gen() { python -m physwm.sim.generate --config "$1" --split "$2" --seed-start "$3" --n "$4" --out "$OUT" --workers "$W"; }
 
-[ -d "$OUT/train" ] || gen configs/sim_train.yaml train 0 10000
+gen configs/sim_train.yaml train 0 10000
 gen configs/sim_train.yaml       id_test      1000000  1000
 gen configs/sim_ood_objects.yaml ood_objects  2000000  1000
 gen configs/sim_ood_forces.yaml  ood_forces   3000000  1000
