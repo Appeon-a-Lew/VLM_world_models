@@ -15,6 +15,7 @@ import os
 os.environ.setdefault("MUJOCO_GL", "egl")
 
 import argparse
+import hashlib
 import json
 import multiprocessing as mp
 from pathlib import Path
@@ -26,13 +27,47 @@ from tqdm import tqdm
 from physwm.sim.scene import load_config
 
 
+def generation_identity(cfg: dict) -> dict:
+    """Pin resolved config, generator sources and simulator version for safe resumption."""
+    import mujoco
+
+    root = Path(__file__).resolve().parents[1]
+    sources = ["schema.py", "geometry.py", "sim/scene.py", "sim/push.py", "sim/render.py", "sim/generate.py"]
+    return {
+        "config": cfg,
+        "mujoco_version": mujoco.__version__,
+        "numpy_version": np.__version__,
+        "source_sha256": {p: hashlib.sha256((root / p).read_bytes()).hexdigest() for p in sources},
+    }
+
+
+def prepare_split(split_dir: Path, identity: dict, seed_start: int, n: int) -> None:
+    """Never resume a legacy or differently configured split by accident."""
+    provenance = {**identity, "seed_start": seed_start, "n": n}
+    marker = split_dir / "provenance.json"
+    if marker.exists():
+        if json.loads(marker.read_text()) != provenance:
+            raise ValueError(f"generation provenance differs in {split_dir}; use a new output root/split")
+    elif split_dir.exists() and any(split_dir.iterdir()):
+        raise ValueError(f"legacy/nonempty split has no provenance: {split_dir}; use a new output root/split")
+    else:
+        split_dir.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps(provenance, indent=1))
+
+
 def _work(args):
     cfg, seed, split, out = args
     from physwm.sim.push import simulate
 
     ep_dir = Path(out) / split / f"{split}_{seed:07d}"
     if (ep_dir / "meta.json").exists():
-        return json.loads((ep_dir / "meta.json").read_text())["episode_id"], None
+        meta = json.loads((ep_dir / "meta.json").read_text())
+        if (meta["episode_id"] != ep_dir.name or meta["seed"] != seed or meta["split"] != split
+                or meta["config"] != cfg["name"]):
+            return None, f"seed {seed}: existing episode identity mismatch"
+        required = ("rgb_t0.png", "rgb_t1.png", "seg_t0.png", "depth_t0.npz", "traj.npz")
+        if all((ep_dir / name).is_file() for name in required):
+            return meta["episode_id"], None
     try:
         data = simulate(cfg, seed, split)
     except Exception as e:  # noqa: BLE001 - log and continue, never kill the pool
@@ -54,10 +89,16 @@ def main():
     ap.add_argument("--seed-start", type=int, required=True)
     ap.add_argument("--n", type=int, required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--workers", type=int, default=max(1, os.cpu_count() - 4))
+    ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 1) - 4))
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    if args.n <= 0 or args.workers <= 0:
+        ap.error("n and workers must be positive")
+    if Path(args.split).name != args.split or args.split in (".", ".."):
+        ap.error("split must be a directory name")
+    split_dir = Path(args.out) / args.split
+    prepare_split(split_dir, generation_identity(cfg), args.seed_start, args.n)
     seeds = range(args.seed_start, args.seed_start + args.n)
     jobs = [(cfg, s, args.split, args.out) for s in seeds]
     ok, errors = [], []
@@ -78,6 +119,8 @@ def main():
     print(f"{args.split}: {len(ok)} ok, {len(errors)} failed")
     for e in errors[:10]:
         print("  ", e)
+    if errors:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

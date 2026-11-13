@@ -101,9 +101,29 @@ class Episode:
 
 
 def load_split(root: str | Path, split: str) -> list[tuple[Path, Episode]]:
-    """Load all episodes of a split as (episode_dir, Episode), sorted by id."""
+    """Load the indexed cohort, rejecting incomplete or inconsistent splits.
+
+    Legacy splits without an index remain readable; unrelated directories are never
+    included when an index is present.
+    """
     split_dir = Path(root) / split
+    generation = split_dir / "generation.json"
+    if generation.exists() and json.loads(generation.read_text()).get("errors"):
+        raise ValueError(f"split has generation failures; repair before use: {split_dir}")
+    index = split_dir / "index.jsonl"
+    if index.exists():
+        ids = [json.loads(line)["episode_id"] for line in index.read_text().splitlines() if line.strip()]
+        if len(ids) != len(set(ids)) or any(Path(i).name != i or i in (".", "..") for i in ids):
+            raise ValueError(f"invalid or duplicate episode IDs in {index}")
+        metas = [split_dir / i / "meta.json" for i in sorted(ids)]
+    else:
+        metas = sorted(split_dir.glob("*/meta.json"))
+    if not metas:
+        raise ValueError(f"empty or missing split: {split_dir}")
     out = []
-    for meta in sorted(split_dir.glob("*/meta.json")):
-        out.append((meta.parent, Episode.load(meta)))
+    for meta in metas:
+        ep = Episode.load(meta)
+        if ep.episode_id != meta.parent.name or ep.split != split:
+            raise ValueError(f"episode identity does not match its split/path: {meta}")
+        out.append((meta.parent, ep))
     return out

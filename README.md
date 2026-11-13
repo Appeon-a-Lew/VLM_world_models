@@ -17,6 +17,14 @@ Phase 1 is a small, rigorously evaluated baseline. It compares trivial baselines
 - **Push:** an instantaneous impulse at the CoM, in a camera-relative direction (left / right / away / toward).
 - **Stored per episode:** RGB at t=0 and t=1, metric depth, segmentation, K and cam2world, masses, frictions, extents, poses at t ∈ {0, 1, 2} s, and a dense 50 Hz trajectory.
 - Every episode is reproducible from (config, seed).
+- New generation records config, source and simulator provenance. Resume requires a matching
+  provenance record; legacy or changed datasets must be regenerated into a new output root.
+- The current action leaves direction jitter, density and friction partly unobserved. Treat
+  endpoint prediction as conditional on these hidden variables, not as uniquely determined
+  by the input image and action text.
+
+See [the data/setup audit](research/DATA_SETUP_AUDIT.md) for corrected bugs, remaining
+experimental assumptions, validation and the migration implications for existing results.
 
 | split | config | seeds | what differs |
 |---|---|---|---|
@@ -34,8 +42,8 @@ scripts/sync.sh                                   # laptop -> halle
 ssh nc-10-4-3
 source ~/adl4cv-worlmodels/scripts/env.sh         # venv, HF_HOME, MUJOCO_GL=egl, cd repo
 python -m pytest -q tests                         # geometry, sim sanity, parser
-bash scripts/gen_all.sh                           # ~15 min, ~1.6 GB
-bash scripts/run_phase1.sh                        # baselines, zero-shot, SFT, eval, ablations, table
+bash scripts/gen_all.sh                           # new corpus, or resume matching provenance only
+bash scripts/run_phase1.sh                        # validation baselines, zero-shot, SFT, eval, ablations, table
 python scripts/viz_episode.py --data $WM/data --split id_test --n 20 --out $WM/viz/id \
     --pred $WM/runs/sft_eval/normal.jsonl         # GT (o) vs prediction (x) overlays
 ```

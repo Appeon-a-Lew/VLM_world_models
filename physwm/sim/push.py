@@ -100,6 +100,7 @@ def _states(m, d, body_ids, up_local, shapes, table_half) -> list[ObjectState]:
 
 
 def simulate(cfg: dict, seed: int, split: str, max_attempts: int = 20) -> EpisodeData:
+    validate_timing(cfg["sim"])
     rng = np.random.default_rng(seed)
     for _ in range(max_attempts):
         try:
@@ -107,6 +108,24 @@ def simulate(cfg: dict, seed: int, split: str, max_attempts: int = 20) -> Episod
         except Rejected:
             continue
     raise RuntimeError(f"seed {seed}: no valid scene after {max_attempts} attempts")
+
+
+def validate_timing(s: dict) -> None:
+    """Reject schedules which would silently omit or mislabel observations."""
+    dt = float(s["timestep"])
+    hz = float(s["traj_hz"])
+    times = np.asarray(s["store_times"], dtype=float)
+    if not np.isfinite(dt) or dt <= 0 or not np.isfinite(hz) or hz <= 0:
+        raise ValueError("timestep and traj_hz must be positive and finite")
+    if (len(times) < 2 or not np.all(np.isfinite(times)) or times[0] != 0
+            or np.any(np.diff(times) <= 0) or not np.any(np.isclose(times, 1, atol=1e-9, rtol=0))
+            or times[-1] > s["horizon"]):
+        raise ValueError("store_times must increase from 0, include 1 s, and fit within horizon")
+    intervals = [s["settle"], s["horizon"], 1 / hz, *times[1:]]
+    for interval in intervals:
+        steps = interval / dt
+        if not np.isfinite(steps) or steps < 1 or not np.isclose(steps, round(steps), atol=1e-8, rtol=0):
+            raise ValueError("settle, horizon, trajectory period and stored times must be positive timestep multiples")
 
 
 def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
@@ -133,8 +152,8 @@ def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
         raise Rejected("did not settle")
     d.qvel[:] = 0
     mujoco.mj_forward(m, d)
-    # body up-axis expressed in the body frame, so tilt is measured relative to the rest pose
-    up_local = [G.quat_to_mat(d.xquat[b]).T @ np.array([0, 0, 1.0]) for b in body_ids]
+    # Use the canonical body up-axis: redefining 'up' after settling hides already toppled objects.
+    up_local = [np.array([0, 0, 1.0]) for b in body_ids]
     shapes = [o.shape for o in objs]
     s0 = _states(m, d, body_ids, up_local, shapes, table_half)
     if any(st.toppled or not st.on_table for st in s0):
@@ -151,12 +170,12 @@ def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
 
     # action
     target = int(rng.integers(len(objs)))
-    xy = np.array([o.pos[:2] for o in objs])
+    xy = np.array([st.pos[:2] for st in s0])
     label, direction, speed = _sample_push(rng, cfg, T, xy[target], np.delete(xy, target, axis=0))
     impulse = specs[target].mass * speed
     text = (
         f"Push the {specs[target].name} {DIRECTION_PHRASE[label]} "
-        f"with an impulse of {impulse:.2f} N·s."
+        f"with an impulse of {impulse:.6g} N·s."
     )
     action = Action(
         type="push", target=target, direction_label=label, direction_world=direction.tolist(),
@@ -180,11 +199,16 @@ def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
         for k in range(1, n_steps + 1):
             mujoco.mj_step(m, d)
             t = k * s["timestep"]
+            store = any(abs(t - st) < 1e-9 for st in store_times[1:])
+            if k % every == 0 or store:
+                # mj_step integrates qpos after computing xpos/xquat. Refresh geometry before
+                # recording or rendering, without another dynamics/constraint solve.
+                mujoco.mj_fwdPosition(m, d)
             if k % every == 0:
                 traj_t.append(t)
                 traj_pos.append(d.xpos[body_ids].copy())
                 traj_quat.append(d.xquat[body_ids].copy())
-            if any(abs(t - st) < 1e-9 for st in store_times[1:]):
+            if store:
                 states.append(_states(m, d, body_ids, up_local, shapes, table_half))
                 if abs(t - 1.0) < 1e-9:
                     rgb1 = rend.rgb(d)

@@ -10,11 +10,12 @@ import argparse
 import csv
 import math
 
-from physwm.eval.metrics import load_predictions, summarize
+from physwm.eval.metrics import load_predictions, summarize, validate_coverage
 from physwm.schema import load_split
 
 COLUMNS = [
     ("method", "{}"), ("split", "{}"), ("task", "{}"), ("episodes", "{}"), ("parse_rate", "{:.2f}"),
+    ("missing_rate", "{:.3f}"),
     ("all_mean", "{:.3f}"), ("all_median", "{:.3f}"),
     ("target_mean", "{:.3f}"), ("target_median", "{:.3f}"), ("target_skill", "{:+.2f}"),
     ("moved_mean", "{:.3f}"), ("unmoved_mean", "{:.3f}"),
@@ -39,7 +40,15 @@ def main():
     rows = []
     for item in args.pred:
         name, path = item.split("=", 1)
-        for r in summarize(load_predictions(path), episodes):
+        predictions = load_predictions(path)
+        groups = {(episodes[p["episode_id"]].split, p["task"]) for p in predictions
+                  if p["episode_id"] in episodes}
+        if not groups:
+            raise ValueError(f"no predictions for requested splits: {path}")
+        for split, task in groups:
+            cohort = {eid: ep for eid, ep in episodes.items() if ep.split == split}
+            validate_coverage([p for p in predictions if p["task"] == task], cohort, (task,))
+        for r in summarize(predictions, episodes):
             rows.append({"method": name, **r})
     rows.sort(key=lambda r: (r["task"], r["split"], r["method"]))
 

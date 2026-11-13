@@ -69,8 +69,11 @@ def main():
     ap.add_argument("--epochs", type=float, default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--train-split", default=None)
+    ap.add_argument("--seed", type=int, default=None)
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
+    if args.seed is not None:
+        cfg["seed"] = args.seed
     if args.epochs is not None:
         cfg["epochs"] = args.epochs
     if args.out is not None:
@@ -105,11 +108,14 @@ def main():
 
     items = load_split(cfg["data"], cfg["train_split"])[: args.limit]
     ds = SFTData(items, cfg["tasks"])
+    if not len(ds):
+        raise ValueError("training dataset is empty")
     collate = Collator(processor)
     print("example target-masked sample:\n", processor.tokenizer.decode(
         [t for t in collate([ds[0]])["labels"][0].tolist() if t != -100]))
     dl = DataLoader(ds, batch_size=cfg["batch_size"], shuffle=True, num_workers=cfg["num_workers"],
-                    collate_fn=collate, drop_last=len(ds) >= cfg["batch_size"], persistent_workers=True)
+                    collate_fn=collate, drop_last=len(ds) >= cfg["batch_size"],
+                    persistent_workers=cfg["num_workers"] > 0)
 
     accum = cfg["grad_accum"]
     total_steps = max(1, math.ceil(len(dl) * cfg["epochs"] / accum))

@@ -1,0 +1,52 @@
+# Data and experiment setup audit — 2026-10-27
+
+Scope: local generator, schema/loading, prompts, parser, SFT loop, inference, scoring, executor and launch scripts. Corrections are local source changes. Existing remote datasets, checkpoints, frozen-test manifest and historical reports were not modified. No model training or final-test evaluation was performed.
+
+## Confirmed defects corrected
+
+| Defect | Correction | Consequence for existing results |
+|---|---|---|
+| `mj_step` updates generalized positions after calculating `xpos`/`xquat`; recorded trajectories, endpoint labels and future RGB used stale derived positions. | Refresh position-dependent quantities before each saved observation. Validate that observation times and trajectory periods lie on the timestep grid. | With current configs, positive-time observations were one 0.002 s step early. Regenerate for corrected trajectories; this alone is not evidence explaining large OOD errors. |
+| Rest-pose orientation was used to redefine upright, making the initial toppled check ineffective. | Measure tilt against the canonical body z-axis, consistent with the schema; reject initially toppled non-spheres. | Some accepted scenes/retries can change. Toppled labels are now absolute upright-relative labels, not changes relative to an already tilted rest pose. |
+| Action aiming used pre-settlement positions; impulse text rounded to 0.01 N·s. | Aim from observed settled positions and format impulses with six significant digits. | Changes some prompts/actions. Old low impulses had substantial relative rounding; zero rounding is possible in principle, but was not observed in the 160-episode smoke sample. Hidden direction jitter remains part of the liberal action task. |
+| Existing `meta.json` silently won over changed configs/code; train generation was skipped merely because a directory existed. | Pin resolved config, generator hashes, NumPy/MuJoCo versions and requested seed range before generation. Resume only matching provenance; check required episode files. Always invoke the train generator. | Legacy datasets remain readable, but cannot silently be resumed with corrected code. Use a new output root for regeneration. |
+| Split loader ignored `index.jsonl`, reading stale directories too; absent splits could load as empty. Generation failures returned success. | Load the indexed cohort; reject identity mismatch, absent indexed metadata, empty splits and recorded generation failures. Generation exits nonzero on failed episodes. | Partial or mixed datasets that previously loaded may now fail explicitly. No evidence was collected that the remote dataset actually contains such failures. |
+| Experiment spec seed was not tied to the actual training config seed; diagnostic validation splits were omitted from the executor's training prohibition. | Reject seed mismatches and protect diagnostics, with matching offline spec checks. | These were enforcement gaps, not proof of leakage or wrong seeds in historical jobs. |
+| Main inference still used the same short generation cap for centers and nine-number 3D boxes. | Allow 128 tokens per object for `qwen3d`, retaining the existing center budget. | Re-run affected zero-shot inference if using main's old cap. exp002 already documented a separate experiment-level cap fix; it is not automatically invalidated by this finding. |
+| Parser/scorer could accept NaN/infinite or malformed coordinates. | Reject non-finite parsed coordinates; score malformed/non-finite vectors as missing. | Existing valid finite predictions retain their metric definition. Report missing rate alongside parse rate. |
+| Scoring silently omitted absent episode/task records, while comparison code treated missing records differently; duplicates could overwrite or double-count. | Validate complete unique episode/task coverage in the executor and paired comparison. Standalone evaluator validates coverage within each represented split/task group. | Incomplete files now fail instead of producing apparently valid scores. The standalone evaluator cannot infer an entirely omitted intended task/split; the executor does enforce all expected tasks/splits. |
+| With `eval_limit`, model scores used a subset but baseline scores used all episodes. | Restrict executor baseline and model scoring to the same declared subset. | Recompute limited-evaluation comparisons. Paired `compare` deliberately requires full requested splits and rejects partial files rather than silently comparing different cohorts. |
+| Convenience phase-1 runner defaulted to frozen final test and used different zero-shot/SFT cohort sizes. | Default to validation for all methods, use full matching cohorts, and run ablations on `val_id`. | Do not use old convenience-runner final-test results for iterative selection. Whether it was previously run is not established by this audit. |
+| SFT with zero loader workers still requested persistent workers; empty data had no clear guard. | Conditional persistent workers and explicit empty-training error; optional direct `--seed` override. | Robustness fixes; default six-worker nonempty training is unaffected. |
+
+MuJoCo timing behavior is documented in [Simulation](https://mujoco.readthedocs.io/en/stable/programming/simulation.html): derived quantities are calculated before integration. The implementation refreshes position quantities only, avoiding an extra full constraint solve during observation.
+
+## Experimental assumptions retained and requiring careful interpretation
+
+- **Broader actions are allowed.** The current implementation is still a pre-action-image, push-conditioned task. This audit does not impose a new action ontology or add tilt/drop implementations.
+- **Some target uncertainty is irreducible from these inputs.** Density and friction vary independently and are not supplied to the VLM. Directions have unreported ±15° jitter. A single RGB image plus action cannot identify all these latent values. This is acceptable as conditional prediction under uncertainty, but errors cannot all be attributed to failure to learn physics. An oracle-parameter or fixed-parameter diagnostic would separate this issue.
+- **Color is already independently sampled.** No color-to-physics correlation was deliberately added or reversed. Geometry and mass are necessarily related through volume × density. Independent appearance sampling is not a correlation-reversal experiment; that requires a separate explicitly correlated training condition.
+- **Action and layout are deliberately correlated.** `aim_at_other_prob: 0.4` biases the direction toward another object. Use newly simulated matched action interventions to test reliance on that cue. Rewriting an action while retaining the original outcome only tests sensitivity, not counterfactual accuracy.
+- **The forces split shifts initial speed.** The prompt specifies impulse = mass × speed. Thus held-out speed ranges need not be disjoint impulse ranges across masses. Call this a speed shift unless impulse overlap has been measured explicitly.
+- **The configuration split changes multiple factors.** It changes count, placement region, camera elevation, and the camera's look-at center through `region_center`. Existing diagnostic splits help but do not make the combined split a pure physics test.
+- **Visibility is not guaranteed.** The generator does not reject every partially/fully occluded or out-of-frame object. The existing segmentation test skips very small visible masks. Stratify by visibility before attributing these errors to dynamics; do not silently change that sampling distribution mid-comparison.
+- **`on_table` is a positional heuristic**, not a contact/support predicate. Do not interpret it as physically verified support. Centers are body origins / modeled bounding-box reference centers, not necessarily mass centers for asymmetric shapes such as cones.
+- **Baselines have privileged information.** Static uses true initial 3D centers; constant velocity also uses true post-action trajectory positions. Keep that distinction in claims and compare against model-perceived static predictions where appropriate.
+- **One metre is a finite missing-answer penalty**, not a guaranteed worst-case error. It can reward refusal relative to a very bad numeric prediction. The metric is retained for comparability, with missing rate now visible in result tables.
+- **Image use is not proof of correct physical grounding.** Blank/swap ablations can reveal dependence but cannot establish which visual variables are used. Swap also often changes the listed objects' identities.
+
+## Validation
+
+- Full suite: 29 tests, including 16 new regression cases for timestamps, provenance, timing schedules, loading, parsing/scoring, spec protection and matched evaluation cohorts.
+- Physics smoke: 20 seeds (9,900,100–9,900,119) per config across all eight `sim_*.yaml` files: 160/160 successful, with rendering stubbed for this broad physics check.
+- Real EGL rendering/CLI smoke: three episodes at seeds 9,900,000–9,900,002, generated under `/tmp/physwm-audit-data`, successfully resumed without regeneration, loaded and scored with both baselines.
+- Shell syntax, Python compilation and diff whitespace checks.
+- Environment: isolated `/tmp` Python 3.12 environment with MuJoCo 3.17.0. Full Qwen inference/training was not exercised; model weights and the GPU training stack were not loaded.
+
+## Handling existing results and deployment
+
+1. Preserve historical reports and the old corpus as the legacy dataset. Do not overwrite the frozen final test or silently rewrite its manifest.
+2. Generate corrected data into a separate root; provenance prevents mixing generator versions. Regenerate all cohorts consistently for a clean comparison. Frozen-test replacement remains a separate explicit dataset-version decision.
+3. Re-run the baseline and one unchanged SFT reference on the corrected training/validation corpus before comparing new research ideas. The source audit does not quantify how much the current leaderboard will move.
+4. Re-score existing complete prediction files when only coverage/cohort checks changed; no training is required for that. Short-cap zero-shot predictions require inference again.
+5. Deployment changes pinned executor/scorer/schema files. Sync and re-pin on the GPU host through the existing project workflow before submitting new experiments. The local patch has not been deployed or re-pinned.

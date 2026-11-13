@@ -8,8 +8,8 @@ Prediction records (one JSON object per line in predictions.jsonl):
 Task A = current-state grounding (t = 0, perception ceiling).
 Task B = future-state prediction (t = 1 s after the push).
 
-A missing or unparsable object prediction is scored with MISSING_PENALTY metres, so a model
-cannot improve its numbers by refusing to answer.
+A missing or unparsable object prediction is scored with MISSING_PENALTY metres.
+Always report missing rate: this finite penalty can be lower than a very bad numeric answer.
 """
 
 from __future__ import annotations
@@ -46,15 +46,37 @@ def per_object_rows(pred: dict, ep: Episode) -> list[dict]:
     rows = []
     for i in range(len(ep.objects)):
         p = pred.get("objects", {}).get(str(i))
-        err = MISSING_PENALTY if p is None else float(np.linalg.norm(np.asarray(p, float) - gt[i]))
+        try:
+            xyz = np.asarray(p, dtype=float)
+            valid = xyz.shape == (3,) and bool(np.all(np.isfinite(xyz)))
+        except (TypeError, ValueError):
+            valid = False
+        err = float(np.linalg.norm(xyz - gt[i])) if valid else MISSING_PENALTY
         rows.append({
             "err": err,
             "err_static": float(np.linalg.norm(gt0[i] - gt[i])),
-            "missing": p is None,
+            "missing": not valid,
             "target": i == ep.action.target,
             "moved": float(np.linalg.norm(gt[i] - gt0[i])) > MOVED_THRESH,
         })
     return rows
+
+
+def validate_coverage(preds: list[dict], episodes: dict[str, Episode], tasks: tuple[str, ...]) -> None:
+    """Fail instead of silently scoring a truncated, duplicated or empty cohort."""
+    expected = {(eid, task) for eid in episodes for task in tasks}
+    seen = set()
+    for pred in preds:
+        if pred["episode_id"] not in episodes:
+            continue  # a prediction file may contain additional, unrequested splits
+        key = (pred["episode_id"], pred["task"])
+        if key in seen:
+            raise ValueError(f"duplicate prediction: {key}")
+        if key not in expected:
+            raise ValueError(f"unexpected prediction task: {key}")
+        seen.add(key)
+    if seen != expected:
+        raise ValueError(f"incomplete prediction coverage: {len(expected - seen)} episode/task records missing")
 
 
 def summarize(preds: list[dict], episodes: dict[str, Episode]) -> list[dict]:

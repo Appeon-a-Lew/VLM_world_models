@@ -78,7 +78,8 @@ def main():
                     )
                     for d, ep, task in chunk
                 ]
-                max_new = 48 + 48 * max(len(ep.objects) for _, ep, _ in chunk)
+                per_object = 128 if args.style == "qwen3d" else 48
+                max_new = 48 + per_object * max(len(ep.objects) for _, ep, _ in chunk)
                 answers = generate(model, processor, msgs, max_new)
                 for (d, ep, task), ans in zip(chunk, answers):
                     objects, parsed = parse_answer(ans, ep)

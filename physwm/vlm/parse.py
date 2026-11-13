@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 
 from physwm.schema import Episode
@@ -57,6 +58,8 @@ def parse_answer(text: str, ep: Episode) -> tuple[dict[str, list[float] | None],
     objects: dict[str, list[float] | None] = {str(o.id): None for o in ep.objects}
     entries = _entries(text)
     for label, xyz in entries:
+        if not all(math.isfinite(v) for v in xyz):
+            continue
         oid = by_name.get(_norm(label))
         if oid is not None and objects[str(oid)] is None:
             objects[str(oid)] = xyz
