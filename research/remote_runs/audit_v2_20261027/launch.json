@@ -1,0 +1,14 @@
+{
+  "host": "nc-10-4-2",
+  "run_root": "/var/tmp/toyi/wm/audit_v2_20261027",
+  "archive_sha256": "2da60d1813113293d860a4070d65b274b2c853b43f9262976e9ce8815e59c352",
+  "base_commit": "f8395ff18d405cbc97b9c6578f3d84f9473bda0c",
+  "source_state": "working-tree snapshot including audit corrections",
+  "train_episodes": 10000,
+  "validation_episodes": 2000,
+  "diagnostic_episodes": 1200,
+  "seed": 0,
+  "max_pipeline_hours": 6,
+  "max_training_hours": 3,
+  "final_test_evaluation": false
+}

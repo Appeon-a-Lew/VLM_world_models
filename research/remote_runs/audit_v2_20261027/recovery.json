@@ -1,0 +1,9 @@
+{
+  "host": "nc-10-4-3",
+  "run_root": "/var/tmp/toyi/wm/audit_v2_20261027",
+  "launcher_pid": 3380643,
+  "reason": "nc-10-4-2 failed CUDA initialization",
+  "complete_episodes": 13200,
+  "simple_baselines_complete": true,
+  "retry_max_hours": 6
+}

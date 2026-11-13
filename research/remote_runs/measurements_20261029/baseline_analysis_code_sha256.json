@@ -1,0 +1,8 @@
+{
+  "physwm/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "physwm/geometry.py": "aead4dd9e4ba2e6c7b7eee495ab0129c7625c78678dcc0c033dde9d139751c81",
+  "physwm/schema.py": "ee66f6c6adc1b308f6b87dbc366a9fb5fd802adec492d5867e2037243dc20a06",
+  "physwm/eval/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "physwm/eval/metrics.py": "40c434b7b9daabfd8fc8d99ff65657b9814cba66ffebc678b18670a0d0dfb554",
+  "physwm/eval/analyze_baseline.py": "033a4e157cc34fa4bfc95449c9b1ccc0d8b1476827b7b8b71978f4be31b44934"
+}

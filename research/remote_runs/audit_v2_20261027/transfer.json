@@ -1,0 +1,12 @@
+{
+  "exec_session_id": 24932,
+  "source_host": "nc-10-4-3",
+  "target_host": "nc-10-4-2",
+  "contents": [
+    "venv",
+    "hf",
+    "requirements_wm.txt"
+  ],
+  "completion_marker": "/var/tmp/toyi/wm/audit_environment_copy_complete",
+  "state_at_handoff": "copying; training waits for marker"
+}
