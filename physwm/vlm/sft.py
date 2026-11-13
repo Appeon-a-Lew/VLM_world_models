@@ -1,7 +1,15 @@
 """LoRA SFT of Qwen3-VL on Task A + Task B with the default next-token cross-entropy, loss on the
-answer tokens only. Vision encoder frozen; LoRA on the language model's attention + MLP.
+answer tokens only. Vision encoder frozen; LoRA on the language model's attention + MLP, plus
+the OneCanvas-style per-patch xyz PE (``physwm.vlm.pe``) trained at 50x the base learning rate.
 
     python -m physwm.vlm.sft --config configs/sft_qwen3vl2b.yaml [--limit 100 --epochs 30 --out ...]
+
+Frames/views: ``--frames 0,1,2 --views 0`` (or the optional config keys ``frames``/``views``)
+put one image per (frame, view) in the user turn, frame-major; each image contributes
+``t*(h/2)*(w/2)`` xyz rows from its own depth file, concatenated in the same order as the
+processor's ``image_grid_thw`` and therefore as the vision tokens. Missing depth files
+(legacy episodes only store t = 0) fall back to zeros for that image. ``--style box3d``
+switches prompt and target to centre + extents; ``--no-pe`` trains the B5 ablation.
 """
 
 from __future__ import annotations
@@ -21,27 +29,61 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
 from physwm.schema import load_split
-from physwm.vlm.prompts import build_messages, load_image, prompt_text, target_text
+from physwm.vlm.pe import (PE_LR_SCALE, frame_token_xyz, image_grid_rows, install_pe,
+                           pe_param_groups, save_pe)
+from physwm.vlm.prompts import build_messages, input_images, prompt_text, target_text
 
 ASSISTANT_HEADER = "<|im_start|>assistant\n"
 
 
+def parse_indices(value, default):
+    """``"0,2"`` / ``[0, 2]`` / ``None`` -> list of ints (None keeps ``default``)."""
+    if value is None:
+        return list(default)
+    if isinstance(value, str):
+        return [int(v) for v in value.split(",") if v.strip()]
+    return [int(v) for v in value]
+
+
 class SFTData(Dataset):
-    def __init__(self, items, tasks):
+    def __init__(self, items, tasks, frames=(0,), views=(0,), style: str = "center",
+                 processor=None):
         self.samples = [(d, ep, t) for d, ep in items for t in tasks]
+        self.frames = list(frames)
+        self.views = list(views)
+        self.pairs = [(f, v) for f in self.frames for v in self.views]
+        self.style = style
+        self.processor = processor
+        self.merge = int(processor.image_processor.merge_size) if processor is not None else 2
+        self._grid_cache: dict = {}
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, i):
         d, ep, task = self.samples[i]
-        return build_messages(prompt_text(ep, task, "center"), load_image(d, ep), target_text(ep, task))
+        images = input_images(d, ep, self.frames, self.views)
+        grids = (image_grid_rows(self.processor, images, self._grid_cache)
+                 if images else [])
+        per_image = [
+            frame_token_xyz(d, ep, frame=f, view=v, grid_thw_row=grid, merge=self.merge)
+            for (f, v), grid in zip(self.pairs, grids)
+        ]
+        xyz = torch.cat(per_image) if per_image else torch.zeros(0, 3)
+        return {
+            "messages": build_messages(
+                prompt_text(ep, task, self.style), images, target_text(ep, task, self.style)
+            ),
+            "xyz": xyz,
+            "grid": grids,
+        }
 
 
 class Collator:
     def __init__(self, processor):
         self.processor = processor
         self.header = processor.tokenizer.encode(ASSISTANT_HEADER, add_special_tokens=False)
+        self.merge = int(processor.image_processor.merge_size)
 
     def _answer_start(self, ids: list[int]) -> int:
         h = self.header
@@ -50,15 +92,31 @@ class Collator:
                 return s + len(h)
         raise ValueError("assistant header not found")
 
+    def _check_alignment(self, enc, batch) -> torch.Tensor:
+        """xyz rows must equal the concatenated merged-token count in image order."""
+        grid = enc.get("image_grid_thw")
+        expected = ([] if grid is None else
+                    [[int(t), int(h), int(w)] for t, h, w in grid.tolist()])
+        seen = [row for s in batch for row in s["grid"]]
+        if expected != seen:
+            raise ValueError(f"image order/grid mismatch: processor {expected} vs dataset {seen}")
+        tokens = sum(t * (h // self.merge) * (w // self.merge) for t, h, w in expected)
+        xyz = torch.cat([s["xyz"] for s in batch]) if batch else torch.zeros(0, 3)
+        if xyz.shape[0] != tokens:
+            raise ValueError(f"xyz/vision-token mismatch: {xyz.shape[0]} xyz rows for {tokens} tokens")
+        return xyz
+
     def __call__(self, batch):
         enc = self.processor.apply_chat_template(
-            batch, tokenize=True, return_dict=True, return_tensors="pt", processor_kwargs={"padding": True}
+            [s["messages"] for s in batch], tokenize=True, return_dict=True, return_tensors="pt",
+            processor_kwargs={"padding": True},
         )
         labels = enc["input_ids"].clone()
         labels[enc["attention_mask"] == 0] = -100
         for r in range(labels.shape[0]):
             labels[r, : self._answer_start(enc["input_ids"][r].tolist())] = -100
         enc["labels"] = labels
+        enc["physwm_xyz"] = self._check_alignment(enc, batch).float()
         return enc
 
 
@@ -70,16 +128,31 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--train-split", default=None)
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--frames", default=None, help="comma list of frame indices, e.g. 0,1,2")
+    ap.add_argument("--views", default=None, help="comma list of view indices, e.g. 0")
+    ap.add_argument("--style", default=None, choices=["center", "box3d"])
+    ap.add_argument("--no-pe", action="store_true", help="train without the xyz PE (B5 ablation)")
+    ap.add_argument("--data", default=None, help="override the data root from the config")
+    ap.add_argument("--tasks", default=None, help="comma list of tasks, e.g. A,B,N")
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     if args.seed is not None:
         cfg["seed"] = args.seed
     if args.epochs is not None:
         cfg["epochs"] = args.epochs
+    if args.data is not None:
+        cfg["data"] = args.data
+    if args.tasks is not None:
+        cfg["tasks"] = [t.strip() for t in args.tasks.split(",")]
     if args.out is not None:
         cfg["out"] = args.out
     if args.train_split is not None:
         cfg["train_split"] = args.train_split
+    frames = parse_indices(args.frames if args.frames is not None else cfg.get("frames"), [0])
+    views = parse_indices(args.views if args.views is not None else cfg.get("views"), [0])
+    style = args.style or cfg.get("style", "center")
+    use_pe = not args.no_pe
+    cfg.update(frames=frames, views=views, style=style, pe=use_pe)
     out = Path(cfg["out"])
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(cfg, indent=1))
@@ -101,13 +174,19 @@ def main():
         r=lcfg["r"], lora_alpha=lcfg["alpha"], lora_dropout=lcfg["dropout"],
         target_modules=lcfg["target_modules"], task_type="CAUSAL_LM",
     ))
+    pe = None
+    if use_pe:
+        pe, _hook = install_pe(model)
     for p in model.parameters():
         if p.requires_grad:
             p.data = p.data.float()
     model.print_trainable_parameters()
+    if pe is not None:
+        pe.float().to("cuda")
+        print(f"xyz PE: hidden={pe.hidden}, lr={cfg['lr'] * PE_LR_SCALE:.1e} (50x base)")
 
     items = load_split(cfg["data"], cfg["train_split"])[: args.limit]
-    ds = SFTData(items, cfg["tasks"])
+    ds = SFTData(items, cfg["tasks"], frames, views, style, processor)
     if not len(ds):
         raise ValueError("training dataset is empty")
     collate = Collator(processor)
@@ -120,7 +199,8 @@ def main():
     accum = cfg["grad_accum"]
     total_steps = max(1, math.ceil(len(dl) * cfg["epochs"] / accum))
     warmup = int(cfg["warmup_frac"] * total_steps)
-    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad],
+    groups = [p for p in model.parameters() if p.requires_grad]
+    opt = torch.optim.AdamW(groups + (pe_param_groups(pe, cfg["lr"]) if pe is not None else []),
                             lr=cfg["lr"], weight_decay=cfg["weight_decay"])
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / max(1, warmup)) *
                                               0.5 * (1 + math.cos(math.pi * min(1.0, s / total_steps))))
@@ -132,6 +212,9 @@ def main():
     while step < total_steps:
         for batch in dl:
             batch = {k: v.to("cuda") for k, v in batch.items()}
+            xyz = batch.pop("physwm_xyz", None)
+            if pe is not None:
+                model._physwm_pe_xyz = xyz  # consumed by the merger hook
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 loss = model(**batch).loss / accum
             loss.backward()
@@ -139,7 +222,9 @@ def main():
             micro += 1
             if micro % accum:
                 continue
-            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
+            torch.nn.utils.clip_grad_norm_(
+                [p for p in model.parameters() if p.requires_grad]
+                + (list(pe.parameters()) if pe is not None else []), 1.0)
             opt.step()
             sched.step()
             opt.zero_grad(set_to_none=True)
@@ -156,6 +241,9 @@ def main():
             if step >= total_steps:
                 break
     model.save_pretrained(out / "adapter")
+    if pe is not None:
+        save_pe(out / "pe.pt", pe)
+        print("saved", out / "pe.pt")
     print("saved", out / "adapter")
 
 

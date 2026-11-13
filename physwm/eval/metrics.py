@@ -1,12 +1,13 @@
 """Metrics for grounded 3D centre prediction.
 
 Prediction records (one JSON object per line in predictions.jsonl):
-    {"episode_id": str, "task": "A" | "B",
+    {"episode_id": str, "task": "A" | "B" | "N",
      "objects": {"<object id>": [x, y, z] | null},   # camera frame (OpenCV), metres
      "parsed": bool, "raw": str (optional)}
 
 Task A = current-state grounding (t = 0, perception ceiling).
 Task B = future-state prediction (t = 1 s after the push).
+Task N = next stored frame (t = frame_times[1], the next-frame sub-goal).
 
 A missing or unparsable object prediction is scored with MISSING_PENALTY metres.
 Always report missing rate: this finite penalty can be lower than a very bad numeric answer.
@@ -24,13 +25,28 @@ from physwm import geometry as G
 from physwm.schema import Episode
 
 TASK_TIME = {"A": 0.0, "B": 1.0}
+NEXT_FRAME_TASK = "N"
 MISSING_PENALTY = 1.0  # m
 MOVED_THRESH = 0.01  # m, GT displacement that counts as "moved"
+
+
+def task_time(ep: Episode, task: str) -> float:
+    """Time of a prediction task: A/B from :data:`TASK_TIME`, N = the next stored frame."""
+    if task in TASK_TIME:
+        return TASK_TIME[task]
+    if task == NEXT_FRAME_TASK:
+        return float(ep.frame_times[1])
+    raise ValueError(f"unknown task {task!r}")
 
 
 def gt_centers_cam(ep: Episode, t: float) -> np.ndarray:
     pos = np.array([s.pos for s in ep.state_at(t)])
     return G.world_to_cam(pos, ep.camera.cam2world)
+
+
+def gt_extents(ep: Episode) -> np.ndarray:
+    """Full body-axis box sizes, (n_objects, 3) metres (unrotated by construction)."""
+    return 2.0 * np.asarray([o.half_extents for o in ep.objects], dtype=float)
 
 
 def load_predictions(path: str | Path) -> list[dict]:
@@ -40,7 +56,7 @@ def load_predictions(path: str | Path) -> list[dict]:
 
 def per_object_rows(pred: dict, ep: Episode) -> list[dict]:
     """One row per object with its error and grouping flags."""
-    t = TASK_TIME[pred["task"]]
+    t = task_time(ep, pred["task"])
     gt = gt_centers_cam(ep, t)
     gt0 = gt_centers_cam(ep, 0.0)
     rows = []
