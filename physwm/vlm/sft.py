@@ -199,9 +199,9 @@ def main():
     accum = cfg["grad_accum"]
     total_steps = max(1, math.ceil(len(dl) * cfg["epochs"] / accum))
     warmup = int(cfg["warmup_frac"] * total_steps)
-    groups = [p for p in model.parameters() if p.requires_grad]
-    opt = torch.optim.AdamW(groups + (pe_param_groups(pe, cfg["lr"]) if pe is not None else []),
-                            lr=cfg["lr"], weight_decay=cfg["weight_decay"])
+    base = [p for p in model.parameters() if p.requires_grad]
+    groups = [{"params": base}] + (pe_param_groups(pe, cfg["lr"]) if pe is not None else [])
+    opt = torch.optim.AdamW(groups, lr=cfg["lr"], weight_decay=cfg["weight_decay"])
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / max(1, warmup)) *
                                               0.5 * (1 + math.cos(math.pi * min(1.0, s / total_steps))))
     print(f"{len(ds)} samples, {len(dl)} batches/epoch, {total_steps} optimizer steps")
