@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World-model dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-dot"></span> World-model dashboard</div>
+    <nav class="tabs" aria-label="Views">
+      <button type="button" class="tab active" data-tab="viewer">Episodes</button>
+      <button type="button" class="tab" data-tab="metrics">Metrics</button>
+    </nav>
+    <div id="status" class="status" role="status"></div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <section class="panel splits-panel">
+        <h2>Splits</h2>
+        <ul id="split-list" class="split-list"></ul>
+      </section>
+      <section class="panel episodes-panel">
+        <h2>Episodes <span id="ep-count" class="count"></span></h2>
+        <input id="ep-filter" class="filter" type="search" placeholder="Filter episodes…" autocomplete="off">
+        <ul id="episode-list" class="episode-list"></ul>
+      </section>
+    </aside>
+
+    <main class="content">
+      <section id="viewer-panel" class="viewer-panel">
+        <div id="empty-state" class="empty-state">
+          <div class="empty-icon">▦</div>
+          <p id="empty-msg">Select an episode from the left to inspect its frames, boxes and predictions.</p>
+          <p class="muted">Frames, views and prediction sources are discovered on the server.</p>
+        </div>
+
+        <div id="episode-view" hidden>
+          <header class="ep-head">
+            <div>
+              <h1 id="ep-title">—</h1>
+              <p id="ep-subtitle" class="muted"></p>
+            </div>
+            <div id="ep-badges" class="badges"></div>
+          </header>
+          <p id="ep-action" class="action-text"></p>
+
+          <div class="viewer-grid">
+            <div class="stage-column">
+              <div id="stage" class="stage">
+                <img id="rgb-img" alt="Episode RGB frame" draggable="false">
+                <img id="seg-img" class="seg" alt="" draggable="false">
+                <canvas id="overlay"></canvas>
+                <span id="frame-badge" class="frame-badge"></span>
+                <span id="view-hint" class="view-hint" hidden></span>
+              </div>
+
+              <div class="transport">
+                <label class="transport-label" for="frame-slider">Frame</label>
+                <input id="frame-slider" class="slider" type="range" min="0" max="0" value="0" step="1">
+                <span id="frame-readout" class="readout"></span>
+                <label id="view-wrap" class="view-select" hidden>
+                  View
+                  <select id="view-select"></select>
+                </label>
+              </div>
+
+              <div class="toolbar">
+                <label class="toggle"><input id="toggle-gt" type="checkbox" checked> GT boxes</label>
+                <label class="toggle"><input id="toggle-labels" type="checkbox" checked> Labels</label>
+                <label class="toggle"><input id="toggle-preds" type="checkbox" checked> Pred centres</label>
+                <label class="toggle"><input id="toggle-errors" type="checkbox" checked> Error lines</label>
+                <label class="toggle"><input id="toggle-seg" type="checkbox"> Seg blend</label>
+              </div>
+            </div>
+
+            <aside class="side-panel">
+              <section class="panel">
+                <h3>Predictions</h3>
+                <label class="field">
+                  <span>Source</span>
+                  <select id="pred-source"></select>
+                </label>
+                <div class="task-row">
+                  <label class="toggle"><input id="task-A" type="checkbox" checked> Task A <span class="muted">(t = 0 s)</span></label>
+                  <label class="toggle"><input id="task-B" type="checkbox" checked> Task B <span class="muted">(t = 1 s)</span></label>
+                </div>
+                <p id="pred-note" class="muted small"></p>
+              </section>
+
+              <section class="panel">
+                <h3>Objects <span class="muted small">GT boxes solid · pred crosses</span></h3>
+                <ul id="legend" class="legend"></ul>
+              </section>
+
+              <section class="panel">
+                <h3>Per-object error <span class="muted small">camera frame, view 0</span></h3>
+                <div id="pred-table" class="pred-table"></div>
+              </section>
+
+              <section class="panel">
+                <h3>Raw answers</h3>
+                <div id="raw-container" class="raw-container"></div>
+              </section>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="metrics-panel" class="metrics-panel" hidden>
+        <header class="metrics-head">
+          <h1>Metrics</h1>
+          <p class="muted">Rendered from <code>--runs</code> when available.</p>
+        </header>
+        <div id="metrics-body" class="metrics-body"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Relative asset paths keep the bundle working under a GitHub Pages
+       subpath; dashboard_export.py injects config.js before app.js. -->
+  <script src="app.js"></script>
+</body>
+</html>
