@@ -21,7 +21,7 @@ CFG = load_config(Path(__file__).parents[1] / 'configs/sim_train.yaml')
 
 class NoRender:
     """Use real MuJoCo physics without needing an OpenGL context for these checks."""
-    def __init__(self, model, width, height):
+    def __init__(self, model, width, height, camera='cam'):
         self.shape = (height, width)
 
     def rgb(self, data):
@@ -57,7 +57,7 @@ def test_observations_match_integrated_state(monkeypatch):
 
     monkeypatch.setattr(push, '_states', checked_states)
     data = push.simulate(CFG, 41, 'audit')
-    assert len(checked) == 3
+    assert len(checked) == len(CFG['sim']['store_times'])
     for t, states in zip(data.episode.times, data.episode.states):
         k = np.flatnonzero(np.isclose(data.traj_t, t))[0]
         np.testing.assert_allclose(data.traj_pos[k], [s.pos for s in states])

@@ -174,7 +174,9 @@ def simulate_family(cfg, seed, split):
                      table_half_size=list(cfg["table"]["half_size"]), objects=variant_specs, camera=variant_cam,
                      action=action, times=list(s["store_times"]), states=states,
                      files={"rgb_t0":"rgb_t0.png", "rgb_t1":"rgb_t1.png", "depth_t0":"depth_t0.npz", "seg_t0":"seg_t0.png", "traj":"traj.npz"})
-        data = EpisodeData(ep, rgb0, rgb1, depth0, seg0, np.array(traj_t), np.array(pos), np.array(quat))
+        data = EpisodeData(episode=ep, rgb={(0, 0): rgb0, (0, 1): rgb1}, depth={(0, 0): depth0},
+                           seg={(0, 0): seg0}, traj_t=np.array(traj_t), traj_pos=np.array(pos),
+                           traj_quat=np.array(quat))
         if variant in ("recolor", "elevation"):
             base = results["original"][0]
             if not (np.array_equal(data.traj_pos, base.traj_pos) and np.array_equal(data.traj_quat, base.traj_quat)):
@@ -233,11 +235,12 @@ def main():
                 if json.loads((path / "meta.json").read_text()) != data.episode.to_dict():
                     raise ValueError(f"episode identity mismatch: {path}")
             path.mkdir(parents=True, exist_ok=True)
-            for name, image in (("rgb_t0.png", data.rgb_t0), ("rgb_t1.png", data.rgb_t1), ("seg_t0.png", data.seg_t0)):
+            for name, image in (("rgb_t0.png", data.rgb[(0, 0)]), ("rgb_t1.png", data.rgb[(0, 1)]),
+                                ("seg_t0.png", data.seg[(0, 0)])):
                 if not (path / name).exists():
                     Image.fromarray(image).save(path / name)
             if not (path / "depth_t0.npz").exists():
-                np.savez_compressed(path / "depth_t0.npz", depth=data.depth_t0.astype(np.float16))
+                np.savez_compressed(path / "depth_t0.npz", depth=data.depth[(0, 0)].astype(np.float16))
             if not (path / "traj.npz").exists():
                 np.savez_compressed(path / "traj.npz", t=data.traj_t, pos=data.traj_pos, quat=data.traj_quat)
             if variant == "original":

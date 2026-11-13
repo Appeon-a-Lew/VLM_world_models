@@ -3,3 +3,9 @@ base: sim_train.yaml
 name: ood_forces
 push:
   speed_choices: [[0.08, 0.25], [2.0, 2.8]]   # sampled uniformly from one of these intervals
+
+# Inherited unchanged from sim_train.yaml; listed so every config pins its own frame grid.
+sim:
+  store_times: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2.0]
+  frame_times: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]   # rendered RGB/depth/seg; subset of store_times
+  n_views: 1                       # cameras sampled per episode; view 0 is the primary camera

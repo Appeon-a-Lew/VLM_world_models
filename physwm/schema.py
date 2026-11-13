@@ -15,6 +15,22 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+# Rendered observation kinds and their file extensions.
+FRAME_KINDS = ("rgb", "depth", "seg")
+FRAME_EXT = {"rgb": "png", "depth": "npz", "seg": "png"}
+
+
+def frame_key(kind: str, view: int, frame: int) -> str:
+    """Flat ``files`` key of one observation (``rgb_v1f03``)."""
+    if kind not in FRAME_EXT:
+        raise ValueError(f"unknown frame kind {kind!r}; expected one of {sorted(FRAME_EXT)}")
+    return f"{kind}_v{view}f{frame:02d}"
+
+
+def frame_file_name(kind: str, view: int, frame: int) -> str:
+    """Relative file name of one observation (``rgb_v1f03.png``)."""
+    return f"{frame_key(kind, view, frame)}.{FRAME_EXT[kind]}"
+
 
 @dataclass
 class Camera:
@@ -73,12 +89,53 @@ class Episode:
     times: list[float]  # seconds after the action at which states are stored
     states: list[list[ObjectState]]  # states[i][j]: time times[i], object j
     files: dict[str, str] = field(default_factory=dict)  # relative to the episode dir
+    views: list[Camera] = field(default_factory=list)  # rendered cameras; views[0] == camera
+    frame_times: list[float] = field(default_factory=lambda: [0.0, 1.0])  # rendered RGB/depth/seg
+
+    def __post_init__(self) -> None:
+        # `camera` mirrors views[0] so single-view code keeps working; legacy metas supply
+        # only `camera` and get the historical t = 0 / t = 1 frame schedule.
+        if not self.views:
+            self.views = [self.camera]
+        self.camera = self.views[0]
+
+    @property
+    def n_views(self) -> int:
+        return len(self.views)
 
     def state_at(self, t: float) -> list[ObjectState]:
         for ti, s in zip(self.times, self.states):
             if abs(ti - t) < 1e-6:
                 return s
         raise KeyError(f"no state stored at t={t}; available: {self.times}")
+
+    def frame_index_at(self, t: float) -> int:
+        """Index into :attr:`frame_times` of the frame rendered at time ``t``."""
+        for k, ft in enumerate(self.frame_times):
+            if abs(ft - t) < 1e-6:
+                return k
+        raise KeyError(f"no frame rendered at t={t}; available: {self.frame_times}")
+
+    def frame_file(self, kind: str, view: int = 0, frame: int = 0) -> str:
+        """Relative path of one rendered observation (``kind`` in rgb/depth/seg).
+
+        Falls back to the legacy names actually stored by old generations
+        (``rgb_t0.png``, ``rgb_t1.png``, ``depth_t0.npz``, ``seg_t0.png``) for view 0 at
+        t = 0/1 s, so episodes generated before frames and views keep loading.
+        """
+        key = frame_key(kind, view, frame)
+        if key in self.files:
+            return self.files[key]
+        legacy = self._legacy_frame_key(kind, view, frame)
+        if legacy is not None and legacy in self.files:
+            return self.files[legacy]
+        raise KeyError(f"{self.episode_id}: no {kind} file stored for view {view}, frame {frame}")
+
+    def _legacy_frame_key(self, kind: str, view: int, frame: int) -> str | None:
+        if view != 0 or not 0 <= frame < len(self.frame_times):
+            return None
+        t = float(self.frame_times[frame])
+        return f"{kind}_t{int(t)}" if t in (0.0, 1.0) else None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -88,6 +145,7 @@ class Episode:
         d = dict(d)
         d["objects"] = [ObjectSpec(**o) for o in d["objects"]]
         d["camera"] = Camera(**d["camera"])
+        d["views"] = [Camera(**c) for c in d.get("views", [])]
         d["action"] = Action(**d["action"])
         d["states"] = [[ObjectState(**s) for s in row] for row in d["states"]]
         return cls(**d)

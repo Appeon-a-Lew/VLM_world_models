@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from physwm.geometry import quat_to_mat, world_to_cam, project  # noqa: E402
+from physwm.schema import Episode  # noqa: E402
 
 EDGES = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4),
          (0, 4), (1, 5), (2, 6), (3, 7)]
@@ -62,15 +63,17 @@ def draw_center(dr, pos_w, cam2world, K, color, r=5):
 
 def panel_for_episode(ep_dir: Path, out_dir: Path) -> Path:
     ep = json.loads((ep_dir / "meta.json").read_text())
+    episode = Episode.from_dict(ep)
     cam = ep["camera"]
     K, cam2world = np.array(cam["K"]), np.array(cam["cam2world"])
-    rgb0 = Image.open(ep_dir / "rgb_t0.png").convert("RGB")
-    rgb1 = Image.open(ep_dir / "rgb_t1.png").convert("RGB")
-    seg_a = np.array(Image.open(ep_dir / "seg_t0.png"))
-    depth = np.load(ep_dir / "depth_t0.npz")["depth"].astype(np.float32)
+    rgb0 = Image.open(ep_dir / episode.frame_file("rgb", 0, 0)).convert("RGB")
+    rgb1 = Image.open(ep_dir / episode.frame_file("rgb", 0, episode.frame_index_at(1.0))).convert("RGB")
+    seg_a = np.array(Image.open(ep_dir / episode.frame_file("seg", 0, 0)))
+    depth = np.load(ep_dir / episode.frame_file("depth", 0, 0))["depth"].astype(np.float32)
+    i0, i1 = (ep["times"].index(t) for t in (0.0, 1.0))
 
     panels = []
-    for img, ti, tag in ((rgb0, 0, f"t=0  ({ep['episode_id']})"), (rgb1, 1, "t=1 s")):
+    for img, ti, tag in ((rgb0, i0, f"t=0  ({ep['episode_id']})"), (rgb1, i1, "t=1 s")):
         canvas = img.copy()
         dr = ImageDraw.Draw(canvas)
         for obj, st in zip(ep["objects"], ep["states"][ti]):

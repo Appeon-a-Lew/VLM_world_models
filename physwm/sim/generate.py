@@ -4,8 +4,10 @@
         --split train --seed-start 0 --n 10000 --out /var/tmp/toyi/wm/data --workers 20
 
 Each episode is fully determined by (config, seed). Output layout:
-    <out>/<split>/<episode_id>/{meta.json, rgb_t0.png, rgb_t1.png, depth_t0.npz, seg_t0.png, traj.npz}
+    <out>/<split>/<episode_id>/{meta.json, rgb_v{v}f{k}.png, depth_v{v}f{k}.npz, seg_v{v}f{k}.png, traj.npz}
     <out>/<split>/index.jsonl
+
+``v`` indexes the episode's views and ``k`` the configured ``frame_times``.
 """
 
 from __future__ import annotations
@@ -24,7 +26,19 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+from physwm.schema import FRAME_KINDS, frame_file_name
 from physwm.sim.scene import load_config
+
+
+def frame_artifacts(s: dict) -> list[str]:
+    """Observation files a sim config writes: every view x frame x kind, plus the trajectory."""
+    names = [
+        frame_file_name(kind, view, frame)
+        for view in range(int(s.get("n_views", 1)))
+        for frame in range(len(s["frame_times"]))
+        for kind in FRAME_KINDS
+    ]
+    return names + ["traj.npz"]
 
 
 def generation_identity(cfg: dict) -> dict:
@@ -65,7 +79,7 @@ def _work(args):
         if (meta["episode_id"] != ep_dir.name or meta["seed"] != seed or meta["split"] != split
                 or meta["config"] != cfg["name"]):
             return None, f"seed {seed}: existing episode identity mismatch"
-        required = ("rgb_t0.png", "rgb_t1.png", "seg_t0.png", "depth_t0.npz", "traj.npz")
+        required = frame_artifacts(cfg["sim"])
         if all((ep_dir / name).is_file() for name in required):
             return meta["episode_id"], None
     try:
@@ -73,10 +87,11 @@ def _work(args):
     except Exception as e:  # noqa: BLE001 - log and continue, never kill the pool
         return None, f"seed {seed}: {e!r}"
     ep_dir.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(data.rgb_t0).save(ep_dir / "rgb_t0.png")
-    Image.fromarray(data.rgb_t1).save(ep_dir / "rgb_t1.png")
-    Image.fromarray(data.seg_t0).save(ep_dir / "seg_t0.png")
-    np.savez_compressed(ep_dir / "depth_t0.npz", depth=data.depth_t0.astype(np.float16))
+    for view, frame in data.rgb:
+        Image.fromarray(data.rgb[(view, frame)]).save(ep_dir / frame_file_name("rgb", view, frame))
+        Image.fromarray(data.seg[(view, frame)]).save(ep_dir / frame_file_name("seg", view, frame))
+        np.savez_compressed(ep_dir / frame_file_name("depth", view, frame),
+                            depth=data.depth[(view, frame)].astype(np.float16))
     np.savez_compressed(ep_dir / "traj.npz", t=data.traj_t, pos=data.traj_pos, quat=data.traj_quat)
     data.episode.save(ep_dir / "meta.json")  # written last: marks the episode complete
     return data.episode.episode_id, None

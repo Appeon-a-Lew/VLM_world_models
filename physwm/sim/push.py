@@ -8,7 +8,8 @@ import mujoco
 import numpy as np
 
 from physwm import geometry as G
-from physwm.schema import Action, Camera, Episode, ObjectSpec, ObjectState
+from physwm.schema import (FRAME_KINDS, Action, Camera, Episode, ObjectSpec, ObjectState,
+                           frame_file_name, frame_key)
 from physwm.sim.render import CameraRenderer
 from physwm.sim.scene import COLORS, SHAPE_NOUN, build_mjcf, sample_objects
 
@@ -26,11 +27,12 @@ class Rejected(Exception):
 
 @dataclass
 class EpisodeData:
+    """One simulated episode plus every rendered observation, keyed by (view, frame index)."""
+
     episode: Episode
-    rgb_t0: np.ndarray
-    rgb_t1: np.ndarray
-    depth_t0: np.ndarray
-    seg_t0: np.ndarray
+    rgb: dict[tuple[int, int], np.ndarray]
+    depth: dict[tuple[int, int], np.ndarray]
+    seg: dict[tuple[int, int], np.ndarray]
     traj_t: np.ndarray  # (T,)
     traj_pos: np.ndarray  # (T, N, 3)
     traj_quat: np.ndarray  # (T, N, 4)
@@ -52,12 +54,33 @@ def _sample_camera(rng, cfg: dict, lookat: np.ndarray) -> tuple[Camera, np.ndarr
     return cam, T
 
 
-def _camera_xml(T: np.ndarray, fovy: float) -> str:
+def _sample_views(rng, cfg: dict, lookat: np.ndarray, n_views: int) -> tuple[list[Camera], list[np.ndarray]]:
+    """Sample V cameras with distinct poses.
+
+    View 0 draws from the main stream (keeping single-view episodes seed-identical to
+    dataset v2); each further view uses its own child stream derived from it.
+    """
+    cams, mats = [], []
+    for v in range(n_views):
+        view_rng = rng if v == 0 else np.random.default_rng(int(rng.integers(0, 2**63 - 1)))
+        for _ in range(10):
+            cam, T = _sample_camera(view_rng, cfg, lookat)
+            if all(not np.allclose(T, other, rtol=0, atol=1e-9) for other in mats):
+                break
+        else:
+            raise Rejected(f"could not sample a distinct camera for view {v}")
+        cams.append(cam)
+        mats.append(T)
+    assert len({m.tobytes() for m in mats}) == n_views, "views must have distinct cam2world"
+    return cams, mats
+
+
+def _camera_xml(T: np.ndarray, fovy: float, name: str = "cam") -> str:
     # MuJoCo cameras look along -z with y up: x = right, y = -down (OpenCV y)
     x, y = T[:3, 0], -T[:3, 1]
     p = T[:3, 3]
     xy = " ".join(f"{v:.6f}" for v in np.r_[x, y])
-    return f'<camera name="cam" pos="{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}" xyaxes="{xy}" fovy="{fovy}"/>'
+    return f'<camera name="{name}" pos="{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}" xyaxes="{xy}" fovy="{fovy}"/>'
 
 
 def _sample_push(rng, cfg: dict, T: np.ndarray, target_xy, other_xy) -> tuple[str, np.ndarray, float]:
@@ -111,16 +134,29 @@ def simulate(cfg: dict, seed: int, split: str, max_attempts: int = 20) -> Episod
 
 
 def validate_timing(s: dict) -> None:
-    """Reject schedules which would silently omit or mislabel observations."""
+    """Reject schedules and view counts which would silently omit or mislabel observations."""
     dt = float(s["timestep"])
     hz = float(s["traj_hz"])
     times = np.asarray(s["store_times"], dtype=float)
+    frames = np.asarray(s["frame_times"], dtype=float)
     if not np.isfinite(dt) or dt <= 0 or not np.isfinite(hz) or hz <= 0:
         raise ValueError("timestep and traj_hz must be positive and finite")
     if (len(times) < 2 or not np.all(np.isfinite(times)) or times[0] != 0
             or np.any(np.diff(times) <= 0) or not np.any(np.isclose(times, 1, atol=1e-9, rtol=0))
             or times[-1] > s["horizon"]):
         raise ValueError("store_times must increase from 0, include 1 s, and fit within horizon")
+    if (len(frames) < 2 or not np.all(np.isfinite(frames)) or frames[0] != 0
+            or np.any(np.diff(frames) <= 0) or not np.any(np.isclose(frames, 1, atol=1e-9, rtol=0))
+            or frames[-1] > s["horizon"]):
+        raise ValueError("frame_times must increase from 0, include 1 s, and fit within horizon")
+    if not all(np.any(np.isclose(times, f, atol=1e-9, rtol=0)) for f in frames):
+        raise ValueError("frame_times must be a subset of store_times")
+    steps = frames / dt
+    if np.any(~np.isfinite(steps)) or np.any(steps < 0) or np.any(~np.isclose(steps, np.round(steps), atol=1e-8, rtol=0)):
+        raise ValueError("frame_times must be non-negative timestep multiples")
+    n_views = s.get("n_views", 1)
+    if not isinstance(n_views, int) or isinstance(n_views, bool) or n_views < 1:
+        raise ValueError("n_views must be an integer >= 1")
     intervals = [s["settle"], s["horizon"], 1 / hz, *times[1:]]
     for interval in intervals:
         steps = interval / dt
@@ -134,14 +170,17 @@ def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
     except RuntimeError as e:
         raise Rejected(str(e))
     lookat = np.r_[cfg["objects"].get("region_center", [0.0, 0.0]), 0.0]
-    cam, T = _sample_camera(rng, cfg, lookat)
+    s = cfg["sim"]
+    cams, mats = _sample_views(rng, cfg, lookat, int(s.get("n_views", 1)))
+    cam, T = cams[0], mats[0]
     table_rgba = list(rng.uniform(0.55, 0.85) * np.array([1.0, 0.85, 0.65])) + [1.0]
     floor_rgba = list(rng.uniform(0.15, 0.35, 3)) + [1.0]
     xml = build_mjcf(objs, cfg, table_rgba, floor_rgba)
-    xml = xml.replace("</worldbody>", _camera_xml(T, cam.fovy_deg) + "\n  </worldbody>")
+    xml = xml.replace("</worldbody>", "".join(
+        _camera_xml(T_view, c.fovy_deg, f"cam{v}") for v, (c, T_view) in enumerate(zip(cams, mats))
+    ) + "\n  </worldbody>")
     m = mujoco.MjModel.from_xml_string(xml)
     d = mujoco.MjData(m)
-    s = cfg["sim"]
     body_ids = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"obj{i}") for i in range(len(objs))]
     table_half = cfg["table"]["half_size"]
 
@@ -182,11 +221,22 @@ def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
         impulse=float(impulse), speed=speed, text=text,
     )
 
-    # observations at t = 0 (before the push)
-    rend = CameraRenderer(m, cam.width, cam.height)
-    try:
-        rgb0, depth0, seg0 = rend.rgb(d), rend.depth(d), rend.seg(d)
+    # observations at every configured view and frame time (frame 0 is before the push)
+    frame_times = [float(t) for t in s["frame_times"]]
+    n_views = len(cams)
+    renderers = [CameraRenderer(m, cam.width, cam.height, camera=f"cam{v}") for v in range(n_views)]
+    rgb: dict[tuple[int, int], np.ndarray] = {}
+    depth: dict[tuple[int, int], np.ndarray] = {}
+    seg: dict[tuple[int, int], np.ndarray] = {}
 
+    def capture(frame: int) -> None:
+        for v, rend in enumerate(renderers):
+            rgb[(v, frame)] = rend.rgb(d)
+            depth[(v, frame)] = rend.depth(d)
+            seg[(v, frame)] = rend.seg(d)
+
+    try:
+        capture(frame_times.index(0.0))
         # apply the impulse as an instantaneous change of the target's linear velocity
         dof = m.jnt_dofadr[m.body_jntadr[body_ids[target]]]
         d.qvel[dof:dof + 3] += speed * direction
@@ -195,7 +245,8 @@ def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
         every = int(round(1.0 / (s["traj_hz"] * s["timestep"])))
         n_steps = int(round(s["horizon"] / s["timestep"]))
         traj_t, traj_pos, traj_quat = [0.0], [d.xpos[body_ids].copy()], [d.xquat[body_ids].copy()]
-        states, rgb1 = [s0], None
+        states = [s0]
+        pending = {k: t for k, t in enumerate(frame_times) if t > 0}
         for k in range(1, n_steps + 1):
             mujoco.mj_step(m, d)
             t = k * s["timestep"]
@@ -210,19 +261,27 @@ def _simulate_once(rng, cfg: dict, seed: int, split: str) -> EpisodeData:
                 traj_quat.append(d.xquat[body_ids].copy())
             if store:
                 states.append(_states(m, d, body_ids, up_local, shapes, table_half))
-                if abs(t - 1.0) < 1e-9:
-                    rgb1 = rend.rgb(d)
+            for frame, ft in list(pending.items()):
+                if abs(t - ft) < 1e-9:
+                    capture(frame)
+                    del pending[frame]
+        assert not pending, f"frames not rendered: {sorted(pending.values())}"
     finally:
-        rend.close()
+        for rend in renderers:
+            rend.close()
 
+    files = {"traj": "traj.npz"}
+    for v in range(n_views):
+        for frame in range(len(frame_times)):
+            for kind in FRAME_KINDS:
+                files[frame_key(kind, v, frame)] = frame_file_name(kind, v, frame)
     ep = Episode(
         episode_id=f"{split}_{seed:07d}", split=split, config=cfg["name"], seed=int(seed),
         table_half_size=list(table_half), objects=specs, camera=cam, action=action,
-        times=list(store_times), states=states,
-        files={"rgb_t0": "rgb_t0.png", "rgb_t1": "rgb_t1.png", "depth_t0": "depth_t0.npz",
-               "seg_t0": "seg_t0.png", "traj": "traj.npz"},
+        times=list(store_times), states=states, files=files,
+        views=cams, frame_times=frame_times,
     )
     return EpisodeData(
-        episode=ep, rgb_t0=rgb0, rgb_t1=rgb1, depth_t0=depth0, seg_t0=seg0,
+        episode=ep, rgb=rgb, depth=depth, seg=seg,
         traj_t=np.array(traj_t), traj_pos=np.array(traj_pos), traj_quat=np.array(traj_quat),
     )

@@ -26,7 +26,7 @@ def test_matched_family():
     assert recolor.objects[recolor.action.target].color != base.episode.objects[base.episode.action.target].color
     assert family["elevation"][0].episode.camera.azimuth_deg == base.episode.camera.azimuth_deg
     assert family["elevation"][0].episode.camera.elevation_deg != base.episode.camera.elevation_deg
-    assert np.array_equal(family["reverse"][0].rgb_t0, base.rgb_t0)
+    assert np.array_equal(family["reverse"][0].rgb[(0, 0)], base.rgb[(0, 0)])
 
 
 def test_cli_dataset_resume_and_split(tmp_path, monkeypatch):

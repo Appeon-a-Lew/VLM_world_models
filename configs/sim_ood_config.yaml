@@ -9,3 +9,9 @@ objects:
   region_center: [0.3, 0.18]       # cluster sits near a table corner
 camera:
   elevation: [12, 25]
+
+# Inherited unchanged from sim_train.yaml; listed so every config pins its own frame grid.
+sim:
+  store_times: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2.0]
+  frame_times: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]   # rendered RGB/depth/seg; subset of store_times
+  n_views: 1                       # cameras sampled per episode; view 0 is the primary camera

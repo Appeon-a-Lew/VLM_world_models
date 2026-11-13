@@ -33,7 +33,7 @@ def test_projected_centres_inside_segmentation(episodes):
         ep = data.episode
         uv = G.project(G.world_to_cam([s.pos for s in ep.state_at(0)], ep.camera.cam2world), ep.camera.K)
         for i, (u, v) in enumerate(uv):
-            ys, xs = np.nonzero(data.seg_t0 == i + 1)
+            ys, xs = np.nonzero(data.seg[(0, 0)] == i + 1)
             if len(xs) < 30:  # fully occluded / out of view
                 continue
             total += 1

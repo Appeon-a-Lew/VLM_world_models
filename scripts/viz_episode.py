@@ -53,8 +53,8 @@ def main():
         K, T = ep.camera.K, ep.camera.cam2world
         colors = [o.rgba for o in ep.objects]
         panels = []
-        for key, t in (("rgb_t0", 0.0), ("rgb_t1", 1.0)):
-            img = Image.open(ep_dir / ep.files[key]).convert("RGB")
+        for t in (0.0, 1.0):
+            img = Image.open(ep_dir / ep.frame_file("rgb", 0, ep.frame_index_at(t))).convert("RGB")
             pos = np.array([s.pos for s in ep.state_at(t)])
             _draw(img, G.project(G.world_to_cam(pos, T), K), colors, "o")
             if t == 1.0 and ep.episode_id in preds:

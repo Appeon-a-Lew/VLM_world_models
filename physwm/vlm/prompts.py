@@ -66,16 +66,18 @@ def target_text(ep: Episode, task: str) -> str:
     ])
 
 
-def load_image(ep_dir: Path, ep: Episode, mode: str = "normal", swap_from: Path | None = None):
-    """Return a PIL image or None (mode 'none')."""
+def load_image(ep_dir: Path, ep: Episode, mode: str = "normal",
+               swap_from: tuple[Path, Episode] | None = None, frame: int = 0, view: int = 0):
+    """Return the RGB image of one frame/view, or None (mode 'none')."""
     if mode == "none":
         return None
     if mode == "blank":
         return Image.new("RGB", (ep.camera.width, ep.camera.height), (128, 128, 128))
     if mode == "swap":
         assert swap_from is not None, "swap mode needs swap_from"
-        return Image.open(swap_from / "rgb_t0.png").convert("RGB")
-    return Image.open(ep_dir / ep.files["rgb_t0"]).convert("RGB")
+        swap_dir, swap_ep = swap_from
+        return Image.open(swap_dir / swap_ep.frame_file("rgb", view, frame)).convert("RGB")
+    return Image.open(ep_dir / ep.frame_file("rgb", view, frame)).convert("RGB")
 
 
 def build_messages(text: str, image, answer: str | None = None) -> list[dict]:
@@ -88,21 +90,23 @@ def build_messages(text: str, image, answer: str | None = None) -> list[dict]:
     return msgs
 
 
-def swap_partners(items: list[tuple[Path, Episode]], seed: int = 0) -> dict[str, Path]:
+def swap_partners(items: list[tuple[Path, Episode]], seed: int = 0) -> dict[str, tuple[Path, Episode]]:
     """Deterministic image-swap pairing: each episode gets the image of a different episode with the
-    same number of objects (falls back to any other episode if its group has a single member)."""
+    same number of objects (falls back to any other episode if its group has a single member).
+
+    Values are the partner's (directory, episode) pair so callers can resolve its frame files.
+    """
     rng = np.random.default_rng(seed)
     groups: dict[int, list] = {}
     for d, ep in items:
         groups.setdefault(len(ep.objects), []).append((d, ep))
     out = {}
-    all_dirs = [d for d, _ in items]
     for members in groups.values():
         order = rng.permutation(len(members))
         for k, idx in enumerate(order):
             d, ep = members[idx]
             if len(members) > 1:
-                out[ep.episode_id] = members[order[(k + 1) % len(members)]][0]
+                out[ep.episode_id] = members[order[(k + 1) % len(members)]]
             else:
-                out[ep.episode_id] = next(x for x in all_dirs if x != d)
+                out[ep.episode_id] = next(x for x in items if x[0] != d)
     return out

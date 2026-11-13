@@ -37,5 +37,7 @@ sim:
   timestep: 0.002
   settle: 0.5                      # s before the push
   horizon: 2.0                     # s after the push
-  store_times: [0.0, 1.0, 2.0]
+  store_times: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2.0]
+  frame_times: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]   # rendered RGB/depth/seg; subset of store_times
+  n_views: 1                       # cameras sampled per episode; view 0 is the primary camera
   traj_hz: 50                      # dense trajectory rate (timestep multiple; includes t = 0.1 s)
