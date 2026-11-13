@@ -11,6 +11,7 @@ D=${DATA:-$WM/data}
 VAL="val_id val_ood_objects val_ood_forces val_ood_config"
 CFG=${SFTCFG:-configs/sft_qwen3vl2b.yaml}
 TASKS=A,B,N
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
 mkdir -p "$R"
 
 frames_ok() { # need
@@ -23,11 +24,11 @@ sys.exit(0 if len(ft) >= need else 1)
 PY
 }
 
-train() { # id frames [--no-pe]
+train() { # id frames [--no-pe] [--num-workers N]
   local id=$1 frames=$2 nope=${3:-}
   if [ -d "$R/$id/adapter" ]; then echo "skip trained arm $id"; return 0; fi
   python -m physwm.vlm.sft --config "$CFG" --data "$D" --style box3d --frames "$frames" \
-    --views 0 --tasks $TASKS $nope --out "$R/$id"
+    --views 0 --tasks $TASKS $nope "${@:4}" --out "$R/$id"
 }
 
 eval_arm() { # id frames [--no-pe]
@@ -86,10 +87,10 @@ arm() {
     l_f1)      train_l l_f1 0;   eval_l l_f1 0 ;;
     c_f1)      train_c c_f1 0;   eval_c c_f1 0 ;;
     s_f3)      frames_ok 3 || { echo "arm s_f3 needs >=3 frame_times in $D (v3 corpus)" >&2; exit 3; }
-               train s_f3 0,1,2; eval_arm s_f3 0,1,2 ;;
+               train s_f3 0,1,2 "" --num-workers 2; eval_arm s_f3 0,1,2 ;;
     s_f1_nope) train s_f1_nope 0 --no-pe;     eval_arm s_f1_nope 0 --no-pe ;;
     s_f3_nope) frames_ok 3 || { echo "arm s_f3_nope needs >=3 frame_times in $D (v3 corpus)" >&2; exit 3; }
-               train s_f3_nope 0,1,2 --no-pe; eval_arm s_f3_nope 0,1,2 --no-pe ;;
+               train s_f3_nope 0,1,2 --no-pe --num-workers 2; eval_arm s_f3_nope 0,1,2 --no-pe ;;
     *) echo "unknown arm $1" >&2; exit 2 ;;
   esac
 }

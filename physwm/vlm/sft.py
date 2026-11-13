@@ -149,6 +149,7 @@ def main():
     ap.add_argument("--no-pe", action="store_true", help="train without the xyz PE (B5 ablation)")
     ap.add_argument("--data", default=None, help="override the data root from the config")
     ap.add_argument("--tasks", default=None, help="comma list of tasks, e.g. A,B,N")
+    ap.add_argument("--num-workers", type=int, default=None, help="override config num_workers")
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     if args.seed is not None:
@@ -207,9 +208,10 @@ def main():
     collate = Collator(processor)
     print("example target-masked sample:\n", processor.tokenizer.decode(
         [t for t in collate([ds[0]])["labels"][0].tolist() if t != -100]))
-    dl = DataLoader(ds, batch_size=cfg["batch_size"], shuffle=True, num_workers=cfg["num_workers"],
+    nw = cfg["num_workers"] if args.num_workers is None else args.num_workers
+    dl = DataLoader(ds, batch_size=cfg["batch_size"], shuffle=True, num_workers=nw,
                     collate_fn=collate, drop_last=len(ds) >= cfg["batch_size"],
-                    persistent_workers=cfg["num_workers"] > 0)
+                    persistent_workers=nw > 0)
 
     accum = cfg["grad_accum"]
     total_steps = max(1, math.ceil(len(dl) * cfg["epochs"] / accum))
