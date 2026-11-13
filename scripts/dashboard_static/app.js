@@ -1,8 +1,47 @@
 "use strict";
 
-/* Local experiment dashboard.  No external dependencies, no network beyond
- * this server.  Geometry mirrors physwm/geometry.py and the box-corner
- * formula in scripts/viz_samples.py. */
+/* Experiment dashboard.  No external dependencies, no CDNs.  Geometry
+ * mirrors physwm/geometry.py and the box-corner formula in
+ * scripts/viz_samples.py.
+ *
+ * Deployment contract: every network access goes through fetchJSON() and
+ * fileURL(), driven by window.DASH_CONFIG:
+ *
+ *   api_base        prefix for JSON endpoints, trailing "/" ("/api/")
+ *   file_template   episode image URL with {split}, {id}, {name}
+ *   paginate        true when the backend pages /api/episodes (server mode)
+ *
+ * dashboard_export.py writes a config.js that selects static mode
+ * ("api/", "files/{split}/{id}/{name}", paginate:false); ?base=<url-prefix>
+ * overrides the bundle location at runtime. */
+
+const DASH_DEFAULTS = {
+  api_base: "/api/",
+  file_template: "/file/{split}/{id}/{name}",
+  paginate: true,
+};
+
+function withTrailingSlash(value) {
+  return String(value).replace(/\/+$/, "") + "/";
+}
+
+const DASH_CONFIG = (() => {
+  const config = Object.assign({}, DASH_DEFAULTS, window.DASH_CONFIG || {});
+  let base = null;
+  try {
+    base = new URLSearchParams(window.location.search).get("base");
+  } catch (_) {
+    base = null;
+  }
+  if (base) {
+    const root = String(base).replace(/\/+$/, "");
+    config.api_base = `${root}/api/`;
+    config.file_template = `${root}/files/{split}/{id}/{name}`;
+    config.paginate = false;
+  }
+  config.api_base = withTrailingSlash(config.api_base);
+  return config;
+})();
 
 const TASK_TIME = { A: 0.0, B: 1.0 };
 const TASK_TOL = 0.051;
@@ -85,8 +124,15 @@ function encode(value) {
   return encodeURIComponent(String(value));
 }
 
-async function api(path) {
-  const response = await fetch(path, { headers: { Accept: "application/json" } });
+/* Every JSON endpoint is fetched through here; the bundle stores
+ * api/<path>.json and the Python server answers both /api/<path> and
+ * /api/<path>.json.  A query string is preserved after the suffix. */
+async function fetchJSON(rel) {
+  const queryAt = rel.indexOf("?");
+  const path = queryAt === -1 ? rel : rel.slice(0, queryAt);
+  const query = queryAt === -1 ? "" : rel.slice(queryAt);
+  const url = `${DASH_CONFIG.api_base}${path}.json${query}`;
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
     try {
@@ -96,6 +142,22 @@ async function api(path) {
     throw new Error(message);
   }
   return response.json();
+}
+
+/* Episode images (rgb/seg png) always go through the configured template. */
+function fileURL(split, episodeId, name) {
+  return DASH_CONFIG.file_template
+    .split("{split}").join(encode(split))
+    .split("{id}").join(encode(episodeId))
+    .split("{name}").join(encode(name));
+}
+
+/* Static bundles ship the full episode list and have no paging; the server
+ * keeps the ?split= query contract. */
+function episodesPath(split) {
+  return DASH_CONFIG.paginate === false
+    ? `episodes/${encode(split)}`
+    : `episodes?split=${encode(split)}`;
 }
 
 function setStatus(message, isError = false) {
@@ -285,7 +347,7 @@ function recordFor(task) {
 }
 
 function pngUrl(name) {
-  return `/file/${encode(state.split)}/${encode(state.episodeId)}/${encode(name)}`;
+  return fileURL(state.split, state.episodeId, name);
 }
 
 /* ------------------------------------------------------------------ */
@@ -326,7 +388,7 @@ function renderEpisodes() {
       img.loading = "lazy";
       img.decoding = "async";
       img.alt = "";
-      img.src = `/file/${encode(state.split)}/${encode(episode.episode_id)}/${encode(episode.thumb)}`;
+      img.src = fileURL(state.split, episode.episode_id, episode.thumb);
       item.append(img);
     } else {
       item.append(make("span", "episode-thumb-fallback", "no rgb"));
@@ -399,7 +461,7 @@ async function loadRecords(loadToken = state.loadToken) {
   const split = state.split;
   const episodeId = state.episodeId;
   try {
-    const records = await api(`/api/pred/${encode(state.predName)}/${encode(split)}/${encode(episodeId)}`);
+    const records = await fetchJSON(`pred/${encode(state.predName)}/${encode(split)}/${encode(episodeId)}`);
     if (loadToken !== state.loadToken) return;
     state.records = Array.isArray(records) ? records : [];
   } catch (error) {
@@ -416,7 +478,7 @@ async function loadRecords(loadToken = state.loadToken) {
 function updatePredNote() {
   const notes = [];
   if (!state.predName) {
-    notes.push("No source selected. Start the server with --pred NAME=PATH.jsonl.");
+    notes.push("No source selected. Predictions are configured at export time.");
   } else if (!state.records.length) {
     notes.push(`No records for “${state.predName}” on this episode.`);
   } else {
@@ -960,7 +1022,7 @@ async function loadMetrics() {
   if (state.metrics) { renderMetrics(); return; }
   els.metricsBody.replaceChildren(make("p", "muted", "Loading metrics…"));
   try {
-    state.metrics = await api("/api/metrics");
+    state.metrics = await fetchJSON("metrics");
     renderMetrics();
   } catch (error) {
     els.metricsBody.replaceChildren(make("div", "metrics-empty", `Could not load metrics: ${error.message}`));
@@ -1047,7 +1109,7 @@ async function selectSplit(split, episodeId) {
     markActive();
     setStatus(`Loading ${split}…`);
     try {
-      const episodes = await api(`/api/episodes?split=${encode(split)}`);
+      const episodes = await fetchJSON(episodesPath(split));
       if (seq !== state.navSeq) return;
       state.episodes = Array.isArray(episodes) ? episodes : [];
     } catch (error) {
@@ -1078,7 +1140,7 @@ async function selectEpisode(episodeId) {
   markActive();
   setStatus(`Loading ${episodeId}…`);
   try {
-    const data = await api(`/api/episode/${encode(state.split)}/${encode(episodeId)}`);
+    const data = await fetchJSON(`episode/${encode(state.split)}/${encode(episodeId)}`);
     if (loadToken !== state.loadToken || seq !== state.navSeq) return;
     state.episode = data;
     state.episodeId = data.episode_id || episodeId;
@@ -1189,7 +1251,7 @@ async function boot() {
   bindUI();
   setStatus("Loading splits…");
   try {
-    const splits = await api("/api/splits");
+    const splits = await fetchJSON("splits");
     state.splits = Array.isArray(splits) ? splits : [];
   } catch (error) {
     setStatus(`Splits: ${error.message}`, true);
@@ -1199,7 +1261,7 @@ async function boot() {
   renderSplits();
 
   try {
-    const preds = await api("/api/preds");
+    const preds = await fetchJSON("preds");
     state.preds = Array.isArray(preds) ? preds : [];
   } catch (_) {
     state.preds = [];
@@ -1208,8 +1270,10 @@ async function boot() {
   renderPredSources();
 
   if (!state.splits.length) {
-    setStatus("No splits found under --data", true);
-    showEmpty("No data roots found. Check the --data path passed to dashboard.py.");
+    setStatus("No splits found", true);
+    showEmpty(DASH_CONFIG.paginate === false
+      ? "No data found in this static bundle. Re-run dashboard_export.py with more episodes."
+      : "No data roots found. Check the --data path passed to dashboard.py.");
     return;
   }
   await route();

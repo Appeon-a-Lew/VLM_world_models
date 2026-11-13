@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>World-model dashboard</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
@@ -119,6 +119,8 @@
     </main>
   </div>
 
-  <script src="/app.js"></script>
+  <!-- Relative asset paths keep the bundle working under a GitHub Pages
+       subpath; dashboard_export.py injects config.js before app.js. -->
+  <script src="app.js"></script>
 </body>
 </html>

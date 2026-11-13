@@ -47,6 +47,17 @@ Endpoints
 ``GET /api/pred/<name>/<split>/<episode_id>``
 ``GET /api/metrics``
 ``GET /file/<split>/<episode_id>/<name.png>``
+
+Every JSON endpoint also answers with a trailing ``.json`` on the last path
+segment (``/api/splits.json``, ``/api/episode/S/I.json``, ...).  That is the
+canonical form used by ``dashboard_static/app.js``, which appends ``.json`` in
+``fetchJSON``; the extensionless routes are kept for backwards compatibility.
+The static bundle written by ``dashboard_export.py`` therefore mirrors the
+server contract exactly (``api/splits.json``, ``api/pred/N/S/I.json``, ...).
+
+Episode images are served under both ``/file/...`` and ``/files/...`` (same
+handler and guards), so a static ``file_template`` of ``files/{split}/...``
+works against the server too.
 """
 
 from __future__ import annotations
@@ -296,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if not parts:
                 self._static("index.html", head)
-            elif parts[0] == "file":
+            elif parts[0] in ("file", "files"):
                 self._episode_file(parts, head)
             elif parts[0] == "api":
                 self._api(parts, parse_qs(parsed.query), head)
@@ -314,6 +325,10 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- routing ---------------------------------------------------------
     def _api(self, parts: list[str], query: dict, head: bool) -> None:
+        # The frontend always requests ``<endpoint>.json``; the extension is
+        # optional so both /api/splits and /api/splits.json work.
+        if len(parts) > 1 and parts[-1].endswith(".json"):
+            parts = parts[:-1] + [parts[-1][: -len(".json")]]
         if parts == ["api", "splits"]:
             self._send_json(self.app.splits(), head=head)
         elif parts == ["api", "episodes"]:
@@ -345,7 +360,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _episode_file(self, parts: list[str], head: bool) -> None:
         if len(parts) != 4:
-            raise HttpError(HTTPStatus.BAD_REQUEST, "expected /file/<split>/<id>/<name>")
+            raise HttpError(HTTPStatus.BAD_REQUEST, "expected /file|/files/<split>/<id>/<name>")
         split = _component(parts[1], "split")
         episode_id = _component(parts[2], "episode id")
         name = _component(parts[3], "file name")
