@@ -5,3 +5,4 @@ data/
 runs/
 outputs/
 *.egg-info/
+MUJOCO_LOG.TXT
