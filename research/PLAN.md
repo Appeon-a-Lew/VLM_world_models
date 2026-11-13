@@ -109,7 +109,30 @@ frame schedules; answer-format precision.
 5. Run B1–B5; new leaderboard keyed to dataset v3; per-axis CIs.
 6. Then the view-count and depth-source experiments.
 
+## Reading rules (human review, 2026-11-13)
+1. Report absolute error **and** skill vs static per split. forces has the largest
+   absolute residual but the strongest relative gain (+0.22 vs +0.20 id, +0.14
+   objects): "hardest in metres" is not "least useful".
+2. Similar per-split means across pipeline versions do not establish the same
+   failure mechanism; pair every B comparison with A/N and omission statistics.
+3. Penalised means conflate omission with error. For any split with missing > 0
+   (val_ood_config task A: 4.3 % at the old token budget), report target-specific
+   missing rates and observed-only means before interpreting extents or skill
+   (the 1 m penalty on a few percent of objects moves a 3 cm margin).
+4. Never estimate dynamics error as B_mean − A_mean. Use paired per-object
+   read-outs: B vs own-A-static (Â held as the t = 1 s answer) and the privileged
+   displacement transfer GT₀ + (B̂ − Â) vs GT₁ (`physwm/eval/analyze_motion.py`).
+5. N vs own-A-static at the same horizon separates motion information from
+   copying the perceived current position. For multi-frame arms N targets the
+   first UNOBSERVED stored frame (0.3 s for frames 0,1,2); scoring an observed
+   frame measures reconstruction, not forecasting.
+6. val_ood_config in the v2/v3 corpora is the legacy compound shift (elevation
+   12–25° + count + corner cluster; see configs/sim_ood_config.yaml). Phase-2
+   configuration claims use val_ood_config_nocam (camera in-distribution,
+   configs/sim_ood_config_nocam.yaml); the legacy split stays descriptive.
+
 ## Open questions
+
 
 - Answer precision: how many decimals / which tokenisation for centre+extents?
 - Ground all objects or only the action target (or both, as separate queries)?

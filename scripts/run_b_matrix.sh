@@ -42,18 +42,37 @@ eval_arm() { # id frames [--no-pe]
     --csv "$R/$id/metrics.csv"
 }
 
+train_l() { # id frames: legacy-recipe reference (centre style, PE off, tasks A/B)
+  local id=$1 frames=$2
+  if [ -d "$R/$id/adapter" ]; then echo "skip trained arm $id"; return 0; fi
+  python -m physwm.vlm.sft --config "$CFG" --data "$D" --style center --no-pe \
+    --frames "$frames" --views 0 --tasks A,B --out "$R/$id"
+}
+
+eval_l() { # id frames
+  local id=$1 frames=$2
+  local pred=$R/$id/pred_val.jsonl
+  if [ ! -f "$pred" ]; then
+    python -m physwm.vlm.infer --data "$D" --splits $VAL --tasks A B \
+      --lora "$R/$id/adapter" --style center --no-pe --frames "$frames" --views 0 \
+      --batch-size 32 --out "$pred"
+  fi
+  python -m physwm.eval.evaluate --data "$D" --splits $VAL --pred "$id=$pred" \
+    --csv "$R/$id/metrics.csv"
+}
+
 train_c() { # id frames: centre-style reference arm (legacy answer format) on the same corpus
   local id=$1 frames=$2
   if [ -d "$R/$id/adapter" ]; then echo "skip trained arm $id"; return 0; fi
   python -m physwm.vlm.sft --config "$CFG" --data "$D" --style center --frames "$frames" \
-    --views 0 --tasks A,B --out "$R/$id"
+    --views 0 --tasks A,B,N --out "$R/$id"
 }
 
 eval_c() { # id frames
   local id=$1 frames=$2
   local pred=$R/$id/pred_val.jsonl
   if [ ! -f "$pred" ]; then
-    python -m physwm.vlm.infer --data "$D" --splits $VAL --tasks A B \
+    python -m physwm.vlm.infer --data "$D" --splits $VAL --tasks A B N \
       --lora "$R/$id/adapter" --style center --frames "$frames" --views 0 \
       --batch-size 32 --out "$pred"
   fi
@@ -64,6 +83,7 @@ eval_c() { # id frames
 arm() {
   case $1 in
     s_f1)      train s_f1 0;     eval_arm s_f1 0 ;;
+    l_f1)      train_l l_f1 0;   eval_l l_f1 0 ;;
     c_f1)      train_c c_f1 0;   eval_c c_f1 0 ;;
     s_f3)      frames_ok 3 || { echo "arm s_f3 needs >=3 frame_times in $D (v3 corpus)" >&2; exit 3; }
                train s_f3 0,1,2; eval_arm s_f3 0,1,2 ;;
@@ -86,6 +106,7 @@ cat > "$R/matrix.md" <<'MD'
 | B3 | s_f3 | B | 0,1,2 | on |
 | B5a | s_f1_nope | B | 0 | off |
 | B5b | s_f3_nope | B | 0,1,2 | off |
-| C-ref | c_f1 | A,B | 0 | n/a (centre style, legacy format) |
+| C-ref | c_f1 | A,B,N | 0 | on (centre style, format-only control vs s_f1) |
+| L-ref | l_f1 | A,B | 0 | off (legacy recipe: centre, no PE) |
 MD
 echo "wrote $R/matrix.md"
