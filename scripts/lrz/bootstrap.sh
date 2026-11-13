@@ -13,7 +13,7 @@ if [ ! -d repo/.git ]; then
 fi
 ( cd repo && git pull --ff-only || true )
 export PATH=$HOME/.local/bin:$PATH
-if [ ! -x "$WM/venv/bin/python" ]; then
+if ! "$WM/venv/bin/python" -c "import torch, transformers, peft" 2>/dev/null; then
   rm -rf "$WM/venv"
   if python3 -m venv "$WM/venv" 2>/dev/null; then
     PIP="$WM/venv/bin/pip install -q"
