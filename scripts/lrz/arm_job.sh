@@ -3,7 +3,7 @@
 # Submit via scripts/lrz/submit_arm.sh <arm> [partition]; ARM arrives via --export.
 #SBATCH --job-name=wm_arm
 #SBATCH --gres=gpu:1
-#SBATCH --qos=gpu
+#SBATCH --partition=lrz-hgx-h100-94x4
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=08:00:00

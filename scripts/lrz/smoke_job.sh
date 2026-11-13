@@ -3,7 +3,7 @@
 # Validates the offline stack and prints s/step for comparison with the lab 5090.
 #SBATCH --job-name=wm_smoke
 #SBATCH --gres=gpu:1
-#SBATCH --qos=gpu
+#SBATCH --partition=lrz-hgx-h100-94x4
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=01:00:00
