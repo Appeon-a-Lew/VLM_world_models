@@ -75,8 +75,11 @@ def parse_indices(value, default=(0,)) -> list[int]:
 def token_budget(style: str, n_objects: int) -> int:
     if style == "box3d":
         return 64 + 40 * n_objects
-    per_object = 128 if style == "qwen3d" else 48
-    return 48 + per_object * n_objects
+    if style == "qwen3d":
+        return 48 + 128 * n_objects
+    if style == "box3d":
+        return 64 + 64 * n_objects
+    return 48 + 48 * n_objects
 
 
 def main():
