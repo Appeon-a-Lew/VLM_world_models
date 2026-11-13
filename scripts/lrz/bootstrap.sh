@@ -15,13 +15,15 @@ fi
 export PATH=$HOME/.local/bin:$PATH
 if ! "$WM/venv/bin/python" -c "import torch, transformers, peft" 2>/dev/null; then
   rm -rf "$WM/venv"
-  if python3 -m venv "$WM/venv" 2>/dev/null; then
-    PIP="$WM/venv/bin/pip install -q"
-  else
+  python3 -m venv "$WM/venv" 2>/dev/null || true
+  if [ ! -x "$WM/venv/bin/pip" ]; then
+    rm -rf "$WM/venv"
     command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH=$HOME/.local/bin:$PATH
     uv venv --python 3.12 "$WM/venv"
     PIP="uv pip install --python $WM/venv/bin/python -q"
+  else
+    PIP="$WM/venv/bin/pip install -q"
   fi
   $PIP torch torchvision peft==0.21.2 accelerate qwen-vl-utils \
     pillow pyyaml tqdm numpy scipy pyarrow transformers==5.20.2
