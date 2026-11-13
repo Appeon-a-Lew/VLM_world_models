@@ -25,8 +25,16 @@ function withTrailingSlash(value) {
   return String(value).replace(/\/+$/, "") + "/";
 }
 
+const PAGES_REMOTE = {
+  api_base: "https://huggingface.co/datasets/Appeon-a-Lew/physwm-tabletop-pushes/resolve/main/site/v3/api/",
+  file_template: "https://huggingface.co/datasets/Appeon-a-Lew/physwm-tabletop-pushes/resolve/main/site/v3/files/{split}/{id}/{name}",
+  paginate: false,
+};
+
 const DASH_CONFIG = (() => {
-  const config = Object.assign({}, DASH_DEFAULTS, window.DASH_CONFIG || {});
+  const defaults = (!window.DASH_CONFIG && window.location.hostname.endsWith(".github.io"))
+    ? PAGES_REMOTE : DASH_DEFAULTS;
+  const config = Object.assign({}, defaults, window.DASH_CONFIG || {});
   let base = null;
   try {
     base = new URLSearchParams(window.location.search).get("base");
