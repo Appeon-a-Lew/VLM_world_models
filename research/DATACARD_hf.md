@@ -13,6 +13,36 @@ tags:
 pretty_name: physwm tabletop pushes (VLMs as physical world models)
 size_categories:
   - 10K<n<100K
+configs:
+  - config_name: meta
+    default: true
+    data_files:
+      - split: train
+        path: tables/train.parquet
+      - split: id_test
+        path: tables/id_test.parquet
+      - split: ood_objects
+        path: tables/ood_objects.parquet
+      - split: ood_forces
+        path: tables/ood_forces.parquet
+      - split: ood_config
+        path: tables/ood_config.parquet
+      - split: val_id
+        path: tables/val_id.parquet
+      - split: val_ood_objects
+        path: tables/val_ood_objects.parquet
+      - split: val_ood_forces
+        path: tables/val_ood_forces.parquet
+      - split: val_ood_config
+        path: tables/val_ood_config.parquet
+      - split: val_diag_elev
+        path: tables/val_diag_elev.parquet
+      - split: val_diag_count
+        path: tables/val_diag_count.parquet
+      - split: val_diag_corner
+        path: tables/val_diag_corner.parquet
+      - split: val_diag_elev_corner
+        path: tables/val_diag_elev_corner.parquet
 ---
 
 # physwm tabletop pushes
@@ -51,9 +81,14 @@ and the jitter are **hidden variables**: endpoint prediction is conditional on t
 | ood_config / val_ood_config | sim_ood_config.yaml | 4 000 000+ / 8 000 000+ | 4–5 objects clustered at a table corner |
 | val_diag_{elev,count,corner,elev_corner} | sim_diag_*.yaml | 8 800 000+ | single-factor diagnostics (legacy OOD axes) |
 
-Counts: train 10 000; id/ood val 500–1 000; diag 300 each. Every episode is
+Counts: train 10 000; legacy phase-1 splits id_test / ood_objects / ood_forces /
+ood_config 1 000 each; their validation counterparts val_id / val_ood_* 500 each;
+val_diag_* 300 each (17 400 episodes, ~11 GB in v3). Every episode is
 reproducible from (config, seed); `provenance.json` per split pins the resolved config,
 generator source hashes and MuJoCo/NumPy versions.
+The dataset viewer shows the `meta` config: per-episode parquet tables under `tables/`
+(seed, object count/shapes, action, camera, target displacement); raw episode files
+live under `v3/` and stream over HTTPS.
 
 ## Files per episode (`<split>/<episode_id>/`)
 - `meta.json` — objects (shape, colour, half extents, mass, density, friction), camera(s)
