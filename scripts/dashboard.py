@@ -311,6 +311,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._episode_file(parts, head)
             elif parts[0] == "api":
                 self._api(parts, parse_qs(parsed.query), head)
+            elif len(parts) == 1 and parts[0] == "config.js":
+                self._server_config(head)
             elif len(parts) == 1 and parts[0] in _STATIC_TYPES:
                 self._static(parts[0], head)
             else:
@@ -374,6 +376,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send_bytes(data, "image/png", head, cache=True)
 
     # -- responses -------------------------------------------------------
+    def _server_config(self, head: bool) -> None:
+        """Server-mode DASH_CONFIG so index.html can always load config.js."""
+        cfg = {"api_base": "/api/", "file_template": "/file/{split}/{id}/{name}",
+               "paginate": True}
+        body = ("window.DASH_CONFIG = " + json.dumps(cfg) + ";\n").encode("utf-8")
+        self._send_bytes(body, "text/javascript; charset=utf-8", head)
+
     def _static(self, name: str, head: bool) -> None:
         path = STATIC_DIR / name
         if not path.is_file():
