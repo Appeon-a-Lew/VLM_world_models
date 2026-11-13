@@ -27,7 +27,7 @@ box to free up. Re-probe at the start of every session (small batches, skill tum
 ## Launch recipe once a suitable box <BOX> appears
 ```bash
 # on <BOX>, machine-local venv with mujoco==3.17 (nc-10-4-2 already has /var/tmp/toyi/wm/sim-venv)
-ssh <BOX> 'cd ~/adl4cv-worlmodels && nohup env MUJOCO_GL=egl OUT=/var/tmp/toyi/wm/data_v3 \
+ssh <BOX> 'cd ~/adl4cv-worlmodels && nohup nice -n 10 env MUJOCO_GL=egl OUT=/var/tmp/toyi/wm/data_v3 \
   WORKERS=16 PATH=$HOME/<venv>/bin:$PATH bash scripts/gen_all.sh > ~/gen_v3.log 2>&1 &'
 ```
 Expected size ≈ 7–8 GB (11 frames/episode, ~0.55 MB/ep, 13.2k episodes). Verify with
