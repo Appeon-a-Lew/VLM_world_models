@@ -4,7 +4,13 @@
         --pred static=$WM/runs/baselines/static.jsonl zeroshot=$WM/runs/zs/pred.jsonl --csv out.csv
 
 Records that carry ``extents`` (centre + extents answer format) additionally get the
-``ext_l2`` and ``iou`` columns; files without extents keep the original table.
+``ext_l2`` and ``iou`` columns; files without extents keep the original table. ``ext_l2`` /
+``iou`` are penalized (missing objects enter with the 1 m penalty / IoU 0); ``ext_l2_obs`` /
+``iou_obs`` average valid predictions only, and ``target_missing`` is the fraction of
+episodes whose target prediction is missing/invalid.
+
+Task N is scored at the first stored frame after the record's ``frames`` (legacy records
+without the field default to ``(0,)``, i.e. t = 0.1 s).
 """
 
 from __future__ import annotations
@@ -24,7 +30,9 @@ COLUMNS = [
     ("target_mean", "{:.3f}"), ("target_median", "{:.3f}"), ("target_skill", "{:+.2f}"),
     ("moved_mean", "{:.3f}"), ("unmoved_mean", "{:.3f}"),
 ]
-BOX_COLUMNS = [("ext_l2", "{:.3f}"), ("iou", "{:.3f}")]
+BOX_COLUMNS = [("ext_l2", "{:.3f}"), ("iou", "{:.3f}"), ("ext_l2_obs", "{:.3f}"),
+               ("iou_obs", "{:.3f}"), ("target_missing", "{:.3f}")]
+BOX_KEYS = tuple(c for c, _ in BOX_COLUMNS)
 
 
 def fmt(v, f):
@@ -59,12 +67,12 @@ def main():
             box = boxes.get((r["split"], r["task"]))
             if box is not None:
                 has_boxes = True
-                r = {**r, "ext_l2": box["ext_l2"], "iou": box["iou"]}
+                r = {**r, **{k: box[k] for k in BOX_KEYS}}
             rows.append({"method": name, **r})
     if has_boxes:  # keep the CSV columns rectangular across methods
         for r in rows:
-            r.setdefault("ext_l2", float("nan"))
-            r.setdefault("iou", float("nan"))
+            for k in BOX_KEYS:
+                r.setdefault(k, float("nan"))
     rows.sort(key=lambda r: (r["task"], r["split"], r["method"]))
     columns = COLUMNS + (BOX_COLUMNS if has_boxes else [])
 

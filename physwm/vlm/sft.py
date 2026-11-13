@@ -10,6 +10,9 @@ put one image per (frame, view) in the user turn, frame-major; each image contri
 processor's ``image_grid_thw`` and therefore as the vision tokens. Missing depth files
 (legacy episodes only store t = 0) fall back to zeros for that image. ``--style box3d``
 switches prompt and target to centre + extents; ``--no-pe`` trains the B5 ablation.
+Task N always targets the first stored frame after the last input frame, so 1-frame arms get
+t = 0.1 s and 3-frame arms get t = 0.3 s on the standard frame grid; episodes whose inputs
+cover every stored frame are skipped for task N.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from peft import LoraConfig, get_peft_model
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
+from physwm.eval.metrics import NEXT_FRAME_TASK, task_time
 from physwm.schema import load_split
 from physwm.vlm.pe import (PE_LR_SCALE, frame_token_xyz, image_grid_rows, install_pe,
                            pe_param_groups, save_pe)
@@ -48,7 +52,6 @@ def parse_indices(value, default):
 class SFTData(Dataset):
     def __init__(self, items, tasks, frames=(0,), views=(0,), style: str = "center",
                  processor=None):
-        self.samples = [(d, ep, t) for d, ep in items for t in tasks]
         self.frames = list(frames)
         self.views = list(views)
         self.pairs = [(f, v) for f in self.frames for v in self.views]
@@ -56,6 +59,17 @@ class SFTData(Dataset):
         self.processor = processor
         self.merge = int(processor.image_processor.merge_size) if processor is not None else 2
         self._grid_cache: dict = {}
+        # Task N needs a stored frame after the last input frame; drop episodes whose inputs
+        # already cover every stored frame instead of failing the run.
+        self.samples = []
+        for d, ep in items:
+            for t in tasks:
+                if t == NEXT_FRAME_TASK:
+                    try:
+                        task_time(ep, t, self.frames)
+                    except ValueError:
+                        continue
+                self.samples.append((d, ep, t))
 
     def __len__(self):
         return len(self.samples)
@@ -72,7 +86,8 @@ class SFTData(Dataset):
         xyz = torch.cat(per_image) if per_image else torch.zeros(0, 3)
         return {
             "messages": build_messages(
-                prompt_text(ep, task, self.style), images, target_text(ep, task, self.style)
+                prompt_text(ep, task, self.style, self.frames), images,
+                target_text(ep, task, self.style, self.frames),
             ),
             "xyz": xyz,
             "grid": grids,

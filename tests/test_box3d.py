@@ -8,10 +8,10 @@ import numpy as np
 import pytest
 
 from physwm.eval.boxmetrics import aligned_iou, per_object_box_rows, summarize_boxes
-from physwm.eval.metrics import MISSING_PENALTY, summarize
+from physwm.eval.metrics import MISSING_PENALTY, summarize, task_time
 from physwm.schema import Action, Camera, Episode, ObjectState, ObjectSpec
 from physwm.vlm.parse import parse_box3d
-from physwm.vlm.prompts import target_text
+from physwm.vlm.prompts import prompt_text, target_text
 
 SAMPLES = Path("/tmp/opencode/wm-samples")
 
@@ -35,6 +35,24 @@ def _ep() -> Episode:
         [_state([0.30, 0.02, 1.20]), _state([-0.12, -0.03, 1.10])],
     ]
     return Episode("e", "s", "c", 0, [0.5, 0.35], objects, cam, action, times, states,
+                   frame_times=times)
+
+
+def _grid_ep(n_frames: int = 11) -> Episode:
+    """Episode on the standard 0.1 s frame grid (``frame_times = 0.0 .. 0.1 * (n-1)``)."""
+    times = [round(0.1 * k, 1) for k in range(n_frames)]
+    objects = [
+        ObjectSpec(0, "red box", "box", "red", [1, 0, 0, 1], [0.05, 0.04, 0.03], 0.1, 500, 0.4),
+        ObjectSpec(1, "blue ball", "sphere", "blue", [0, 0, 1, 1], [0.02, 0.02, 0.02], 0.1, 500, 0.4),
+    ]
+    cam = Camera(448, 448, [[480.0, 0.0, 224.0], [0.0, 480.0, 224.0], [0.0, 0.0, 1.0]],
+                 np.eye(4).tolist(), 50.0, 0.0, 45.0, 1.0)
+    action = Action("push", 0, "left", [1.0, 0.0, 0.0], 0.1, 1.0, "Push the red box to the left.")
+    states = [
+        [_state([0.10 + 0.01 * k, 0.02, 1.20]), _state([-0.15 - 0.01 * k, -0.03, 1.10])]
+        for k in range(n_frames)
+    ]
+    return Episode("g", "s", "c", 0, [0.5, 0.35], objects, cam, action, times, states,
                    frame_times=times)
 
 
@@ -127,3 +145,92 @@ def test_box_rows_and_summary_penalise_missing_extents():
                               repetitions=50)
     assert len(summary) == 1 and summary[0]["split"] == "s" and summary[0]["task"] == "B"
     assert 0.0 < summary[0]["iou"] < 1.0 and np.isfinite(summary[0]["ext_l2_ci95"]).all()
+
+
+def test_task_time_n_follows_last_input_frame():
+    ep = _grid_ep()
+    assert task_time(ep, "N") == pytest.approx(ep.frame_times[1])  # legacy default
+    assert task_time(ep, "N", (0,)) == pytest.approx(0.1)
+    assert task_time(ep, "N", (0, 1, 2)) == pytest.approx(0.3)
+    assert task_time(ep, "A", (0, 1, 2)) == 0.0
+    assert task_time(ep, "B", (0, 1, 2)) == 1.0
+
+
+def test_task_time_n_undefined_when_inputs_cover_all_frames():
+    ep = _grid_ep(3)
+    with pytest.raises(ValueError, match="inputs cover all stored frames"):
+        task_time(ep, "N", (0, 1, 2))
+
+
+def test_prompt_resolves_next_frame_after_last_input():
+    ep = _grid_ep()
+    single = prompt_text(ep, "N", "box3d")
+    assert ("at the next stored frame after the last input image "
+            "(0.1 second after the action)") in single
+    assert single == prompt_text(ep, "N", "box3d", (0,))
+    triple = prompt_text(ep, "N", "box3d", (0, 1, 2))
+    assert "0.3 second after the action" in triple
+    assert "The images show t = 0.0, 0.1, 0.2 seconds after the action." in triple
+    assert "0.1 second after the action" not in triple
+
+
+def test_multi_frame_prompt_lists_input_times():
+    ep = _grid_ep()
+    b_single, b_multi = prompt_text(ep, "B", "center"), prompt_text(ep, "B", "center", (0, 1, 2))
+    assert "The images show t = 0.0, 0.1, 0.2 seconds after the action." in b_multi
+    assert "1.0 second after the action" in b_multi
+    assert "The images show" not in b_single
+    a_multi = prompt_text(ep, "A", "center", (0, 1, 2))
+    assert "as it is in the first image (t = 0.0 s)" in a_multi
+    assert "The images show t = 0.0, 0.1, 0.2 seconds after the action." in a_multi
+    assert "The images show" not in prompt_text(ep, "A", "center")
+
+
+def test_target_text_uses_resolved_next_frame_time():
+    ep = _grid_ep()
+    data = json.loads(target_text(ep, "N", "center", (0, 1, 2)))
+    assert data == [
+        {"label": o.name,
+         "center": [round(float(v), 3) for v in ep.state_at(0.3)[i].pos]}
+        for i, o in enumerate(ep.objects)
+    ]
+
+
+def test_metrics_summarize_scores_task_n_from_record_frames():
+    ep = _grid_ep()
+    pred = {"episode_id": "g", "task": "N", "parsed": True, "frames": [0, 1, 2],
+            "objects": {str(i): list(ep.state_at(0.3)[i].pos) for i in range(len(ep.objects))}}
+    out = summarize([pred], {"g": ep})[0]
+    assert out["all_mean"] == pytest.approx(0.0)  # identity cam2world, t = 0.3 s
+
+
+def test_prediction_record_keeps_frames():
+    pytest.importorskip("torch")
+    from physwm.vlm.infer import prediction_record
+
+    rec = prediction_record(_grid_ep(), "N", {"0": [0.0, 0.0, 1.0]}, None, True, "raw",
+                            [0, 1, 2], image_mode="normal", style="center", lora=None)
+    again = json.loads(json.dumps(rec))
+    assert again["frames"] == [0, 1, 2] and again["task"] == "N"
+    assert "extents" not in again
+
+
+def test_summary_obs_columns_exclude_missing_and_count_target_missing():
+    ep = _ep()
+    non_target_missing = {"episode_id": "e", "task": "B", "parsed": True,
+                          "objects": {"0": [0.30, 0.02, 1.20], "1": None},
+                          "extents": {"0": [0.1, 0.08, 0.06]}}
+    s = summarize_boxes([non_target_missing], {"e": ep}, repetitions=20)[0]
+    assert s["ext_l2_obs"] == pytest.approx(0.0)  # object 1 excluded, not penalised
+    assert s["iou_obs"] == pytest.approx(1.0)
+    assert s["ext_l2"] == pytest.approx(MISSING_PENALTY / 2)  # penalized mean unchanged
+    assert s["iou"] == pytest.approx(0.5)
+    assert s["target_missing"] == 0.0  # only the non-target object is missing
+
+    target_missing = {"episode_id": "e", "task": "B", "parsed": True,
+                      "objects": {"0": None, "1": [-0.12, -0.03, 1.10]},
+                      "extents": {"1": [0.04, 0.04, 0.04]}}
+    s = summarize_boxes([target_missing], {"e": ep}, repetitions=20)[0]
+    assert s["target_missing"] == 1.0
+    assert s["ext_l2_obs"] == pytest.approx(0.0)
+    assert s["iou_obs"] == pytest.approx(1.0)

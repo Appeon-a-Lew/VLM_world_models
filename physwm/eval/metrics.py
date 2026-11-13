@@ -7,7 +7,9 @@ Prediction records (one JSON object per line in predictions.jsonl):
 
 Task A = current-state grounding (t = 0, perception ceiling).
 Task B = future-state prediction (t = 1 s after the push).
-Task N = next stored frame (t = frame_times[1], the next-frame sub-goal).
+Task N = the first stored frame after the last input frame (the next-frame sub-goal). With the
+legacy single-image input (``frames = (0,)``) and the 0.1 s frame grid that is
+t = frame_times[1] = 0.1 s; with three input frames (0, 1, 2) it is t = 0.3 s.
 
 A missing or unparsable object prediction is scored with MISSING_PENALTY metres.
 Always report missing rate: this finite penalty can be lower than a very bad numeric answer.
@@ -30,12 +32,24 @@ MISSING_PENALTY = 1.0  # m
 MOVED_THRESH = 0.01  # m, GT displacement that counts as "moved"
 
 
-def task_time(ep: Episode, task: str) -> float:
-    """Time of a prediction task: A/B from :data:`TASK_TIME`, N = the next stored frame."""
+def task_time(ep: Episode, task: str, frames: tuple[int, ...] = (0,)) -> float:
+    """Time of a prediction task: A/B from :data:`TASK_TIME`, N = the first stored frame after
+    the last input frame.
+
+    ``frames`` are the input frame indices (frame-major image order). Task N with
+    ``frames = (0,)`` reproduces the historical t = 0.1 s; with ``(0, 1, 2)`` it is the
+    first stored frame after 0.2 s (0.3 s on the standard grid). An empty ``frames`` falls
+    back to ``(0,)``. Raises ``ValueError`` when the inputs already cover every stored frame.
+    """
     if task in TASK_TIME:
         return TASK_TIME[task]
     if task == NEXT_FRAME_TASK:
-        return float(ep.frame_times[1])
+        frames = tuple(frames) if frames else (0,)
+        t_last = float(ep.frame_times[frames[-1]])
+        for t in ep.frame_times:
+            if float(t) > t_last + 1e-9:
+                return float(t)
+        raise ValueError("task N undefined: inputs cover all stored frames")
     raise ValueError(f"unknown task {task!r}")
 
 
@@ -55,8 +69,12 @@ def load_predictions(path: str | Path) -> list[dict]:
 
 
 def per_object_rows(pred: dict, ep: Episode) -> list[dict]:
-    """One row per object with its error and grouping flags."""
-    t = task_time(ep, pred["task"])
+    """One row per object with its error and grouping flags.
+
+    Task N is resolved at the first frame after the record's ``frames`` (legacy records
+    without the field default to ``(0,)``, i.e. t = 0.1 s).
+    """
+    t = task_time(ep, pred["task"], tuple(pred.get("frames", (0,)) or (0,)))
     gt = gt_centers_cam(ep, t)
     gt0 = gt_centers_cam(ep, 0.0)
     rows = []

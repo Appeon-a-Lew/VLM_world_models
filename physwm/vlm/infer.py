@@ -9,6 +9,9 @@ adapter (loaded automatically, ``--no-pe`` for the B5 ablation). Each generate c
 ``model._physwm_pe_xyz`` built from the same depth files and image order. With
 ``--image-mode none|blank`` the PE is skipped (there is no geometry to supply); with
 ``swap`` it uses the swap partner's depth, so the geometry matches the shown image.
+
+Every record carries ``"frames"`` (the input frame indices) so task N is scored at the first
+stored frame after the last input frame without re-deriving the arm shape from the file name.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ import torch
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
-from physwm.schema import load_split
+from physwm.schema import Episode, load_split
 from physwm.vlm.parse import parse_answer, parse_box3d
 from physwm.vlm.pe import frame_token_xyz, image_grid_rows, install_pe, load_pe
 from physwm.vlm.prompts import build_messages, input_images, prompt_text, swap_partners
@@ -74,12 +77,25 @@ def parse_indices(value, default=(0,)) -> list[int]:
 
 def token_budget(style: str, n_objects: int) -> int:
     if style == "box3d":
-        return 64 + 40 * n_objects
+        return 64 + 64 * n_objects
     if style == "qwen3d":
         return 48 + 128 * n_objects
-    if style == "box3d":
-        return 64 + 64 * n_objects
     return 48 + 48 * n_objects
+
+
+def prediction_record(ep: Episode, task: str, objects: dict, extents: dict | None,
+                      parsed: bool, raw: str, frames, image_mode: str, style: str,
+                      lora: str | None) -> dict:
+    """One ``predictions.jsonl`` record; ``frames`` makes task N self-describing (t = first
+    stored frame after the last input frame)."""
+    rec = {
+        "episode_id": ep.episode_id, "task": task, "objects": objects,
+        "parsed": parsed, "raw": raw, "image_mode": image_mode,
+        "style": style, "lora": lora, "frames": [int(f) for f in frames],
+    }
+    if extents is not None:
+        rec["extents"] = extents
+    return rec
 
 
 def main():
@@ -119,7 +135,7 @@ def main():
                 for d, ep, task in chunk:
                     partner = partners.get(ep.episode_id)
                     images = input_images(d, ep, frames, views, args.image_mode, partner)
-                    msgs.append(build_messages(prompt_text(ep, task, args.style), images))
+                    msgs.append(build_messages(prompt_text(ep, task, args.style, frames), images))
                     if use_pe:
                         d_depth, ep_depth = partner if partner is not None else (d, ep)
                         grids = image_grid_rows(processor, images, grid_cache)
@@ -137,13 +153,10 @@ def main():
                     else:
                         objects, parsed = parse_answer(ans, ep)
                         extents = None
-                    rec = {
-                        "episode_id": ep.episode_id, "task": task, "objects": objects,
-                        "parsed": parsed, "raw": ans, "image_mode": args.image_mode,
-                        "style": args.style, "lora": args.lora,
-                    }
-                    if extents is not None:
-                        rec["extents"] = extents
+                    rec = prediction_record(
+                        ep, task, objects, extents, parsed, ans, frames,
+                        image_mode=args.image_mode, style=args.style, lora=args.lora,
+                    )
                     f.write(json.dumps(rec) + "\n")
                 n_done += len(chunk)
     print(f"wrote {out_path} ({n_done} samples, {time.time() - t_start:.0f}s)")

@@ -12,6 +12,14 @@ L2 in metres and the IoU of the two boxes after transforming the predicted centr
 GT body frame (body-axis-aligned boxes there; exact axis-aligned intersection/union).
 Missing predictions use the same fixed :data:`MISSING_PENALTY` for both L2 terms and score
 IoU 0. Aggregates are per (split, task) means with an episode-level percentile bootstrap CI.
+
+Penalized vs. observed columns
+------------------------------
+``ext_l2`` / ``iou`` are the penalized means: a missing or invalid prediction enters with
+:data:`MISSING_PENALTY` metres (or IoU 0), which conflates omission with numeric error.
+``ext_l2_obs`` / ``iou_obs`` are means over objects with a valid prediction only and never
+apply the penalty. ``target_missing`` is the fraction of episodes whose TARGET object
+prediction is missing/invalid, per task.
 """
 
 from __future__ import annotations
@@ -60,9 +68,16 @@ def aligned_iou(pred_centre_cam: np.ndarray, pred_extents, gt_centre_cam: np.nda
     return float(inter / union) if union > 0 else 0.0
 
 
-def per_object_box_rows(pred: dict, ep: Episode, t: float | None = None) -> list[dict]:
-    """One row per object: centre L2, extents L2, body-frame IoU, plus grouping flags."""
-    t = task_time(ep, pred["task"]) if t is None else t
+def per_object_box_rows(pred: dict, ep: Episode, t: float | None = None,
+                        frames: tuple[int, ...] | None = None) -> list[dict]:
+    """One row per object: centre L2, extents L2, body-frame IoU, plus grouping flags.
+
+    Task N is resolved from the record's ``frames`` (legacy records default to ``(0,)``,
+    i.e. t = 0.1 s) unless an explicit ``t`` or ``frames`` is passed.
+    """
+    frames = (tuple(pred.get("frames", (0,)) or (0,)) if frames is None
+              else tuple(frames) or (0,))
+    t = task_time(ep, pred["task"], frames) if t is None else t
     gt = gt_centers_cam(ep, t)
     gt0 = gt_centers_cam(ep, 0.0)
     gt_ext = gt_extents(ep)
@@ -101,7 +116,12 @@ def _bootstrap_ci(values, repetitions: int = 1000, seed: int = 0) -> list[float]
 
 def summarize_boxes(preds: list[dict], episodes: dict[str, Episode], repetitions: int = 1000,
                     seed: int = 0) -> list[dict]:
-    """Per (split, task) means and bootstrap CIs of centre L2, extents L2 and IoU."""
+    """Per (split, task) means and bootstrap CIs of centre L2, extents L2 and IoU.
+
+    ``ext_l2``/``iou`` are penalized (missing objects enter as :data:`MISSING_PENALTY` /
+    IoU 0); ``ext_l2_obs``/``iou_obs`` average valid predictions only, and
+    ``target_missing`` is the per-episode fraction of missing target predictions.
+    """
     groups: dict[tuple, list[list[dict]]] = defaultdict(list)  # per episode rows
     parsed: dict[tuple, list[bool]] = defaultdict(list)
     for p in preds:
@@ -119,12 +139,22 @@ def summarize_boxes(preds: list[dict], episodes: dict[str, Episode], repetitions
         def mean(name):
             return float(np.mean([r[name] for r in rows])) if rows else float("nan")
 
+        def obs_mean(name, valid):
+            vals = [r[name] for r in rows if valid(r)]
+            return float(np.mean(vals)) if vals else float("nan")
+
         out.append({
             "split": split, "task": task, "episodes": len(per_ep),
             "parse_rate": float(np.mean(parsed[(split, task)])),
             "missing_rate": float(np.mean([r["missing"] for r in rows])),
             "missing_extents_rate": float(np.mean([r["missing_extents"] for r in rows])),
             "centre_l2": mean("centre_l2"), "ext_l2": mean("ext_l2"), "iou": mean("iou"),
+            "ext_l2_obs": obs_mean("ext_l2", lambda r: not r["missing_extents"]),
+            "iou_obs": obs_mean("iou", lambda r: not r["missing"] and not r["missing_extents"]),
+            "target_missing": float(np.mean([
+                1.0 if next(r["missing"] for r in ep_rows if r["target"]) else 0.0
+                for ep_rows in per_ep
+            ])),
             "centre_l2_ci95": _bootstrap_ci([np.mean([r["centre_l2"] for r in ep_rows])
                                              for ep_rows in per_ep], repetitions, seed),
             "ext_l2_ci95": _bootstrap_ci([np.mean([r["ext_l2"] for r in ep_rows])

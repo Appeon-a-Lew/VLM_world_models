@@ -13,7 +13,8 @@ Image modes (image-dependence test): normal | none (text only) | blank (uniform 
 
 Frame/view order: images are listed frame-major, view-minor (``frames`` outer, ``views``
 inner); that is also the order of ``image_grid_thw`` rows and therefore of the merged
-tokens the xyz PE is indexed by.
+tokens the xyz PE is indexed by. Task N always targets the first stored frame after the
+last input frame; multi-frame prompts state the input times explicitly.
 """
 
 from __future__ import annotations
@@ -42,8 +43,19 @@ def _intrinsics(ep: Episode) -> str:
     )
 
 
-def _ask(ep: Episode, task: str, what: str) -> str:
+def _input_times(ep: Episode, frames: tuple[int, ...]) -> str:
+    times = ", ".join(f"{float(ep.frame_times[f]):.1f}" for f in frames)
+    return f"The images show t = {times} seconds after the action."
+
+
+def _ask(ep: Episode, task: str, what: str, frames: tuple[int, ...] = (0,)) -> str:
+    """Question sentence for one task; ``frames`` are the input frame indices."""
+    frames = tuple(frames) if frames else (0,)
     if task == "A":
+        if len(frames) > 1:
+            t0 = float(ep.frame_times[frames[0]])
+            return (f"Report the {what} of each listed object as it is in the first image "
+                    f"(t = {t0:.1f} s).")
         return f"Report the {what} of each listed object as it is in the image."
     if task == "B":
         return (
@@ -53,16 +65,19 @@ def _ask(ep: Episode, task: str, what: str) -> str:
     if task == NEXT_FRAME_TASK:
         return (
             f"Action: {ep.action.text}\n"
-            f"Predict the {what} of each listed object at the next stored frame "
-            f"({task_time(ep, task):.1f} second after the action)."
+            f"Predict the {what} of each listed object at the next stored frame after the last "
+            f"input image ({task_time(ep, task, frames):.1f} second after the action)."
         )
     raise ValueError(f"unknown task {task!r}")
 
 
-def prompt_text(ep: Episode, task: str, style: str = "center") -> str:
+def prompt_text(ep: Episode, task: str, style: str = "center",
+                frames: tuple[int, ...] = (0,)) -> str:
+    """Prompt for one (episode, task); with several input frames it also states their times."""
+    frames = tuple(frames) if frames else (0,)
     names = ", ".join(o.name for o in ep.objects)
     if style == "box3d":
-        ask = _ask(ep, task, "3D bounding box")
+        ask = _ask(ep, task, "3D bounding box", frames)
         fmt = (
             'Answer only with a JSON list, one entry per listed object: '
             '[{"label": "<object>", "center": [x, y, z], "extents": [ex, ey, ez]}, ...]. '
@@ -70,7 +85,7 @@ def prompt_text(ep: Episode, task: str, style: str = "center") -> str:
             "(ex, ey, ez) in metres."
         )
     else:
-        ask = _ask(ep, task, "3D centre")
+        ask = _ask(ep, task, "3D centre", frames)
         if style == "center":
             fmt = 'Answer only with JSON: [{"label": "<object>", "center": [x, y, z]}, ...]'
         elif style == "qwen3d":
@@ -81,15 +96,20 @@ def prompt_text(ep: Episode, task: str, style: str = "center") -> str:
             )
         else:
             raise ValueError(style)
+    times = f"{_input_times(ep, frames)}\n" if len(frames) > 1 else ""
     return (
         f"A camera looks at objects on a table. {_intrinsics(ep)} {FRAME}\n"
-        f"Objects: {names}.\n{ask}\n{fmt}"
+        f"Objects: {names}.\n{times}{ask}\n{fmt}"
     )
 
 
-def target_text(ep: Episode, task: str, style: str = "center") -> str:
-    """Ground-truth answer string; "box3d" adds full body-axis extents to the centres."""
-    t = task_time(ep, task)
+def target_text(ep: Episode, task: str, style: str = "center",
+                frames: tuple[int, ...] = (0,)) -> str:
+    """Ground-truth answer string; "box3d" adds full body-axis extents to the centres.
+
+    ``frames`` select the task-N target time (first stored frame after the last input frame).
+    """
+    t = task_time(ep, task, tuple(frames) if frames else (0,))
     c = gt_centers_cam(ep, t)
     if style == "box3d":
         e = gt_extents(ep)
