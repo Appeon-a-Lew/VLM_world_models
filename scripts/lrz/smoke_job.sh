@@ -14,6 +14,7 @@ cd "$WM/repo"
 export HF_HOME=$WM/hf
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export PATH=$WM/venv/bin:$PATH
+export WM
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 if [ -f "$WM/data_v3.tar" ] && [ ! -d "$WM/data_v3" ]; then
   echo "extracting corpus on compute node"; tar xf "$WM/data_v3.tar" -C "$WM" && rm -f "$WM/data_v3.tar"
