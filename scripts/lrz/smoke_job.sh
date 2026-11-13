@@ -15,6 +15,9 @@ export HF_HOME=$WM/hf
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export PATH=$WM/venv/bin:$PATH
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+if [ -f "$WM/data_v3.tar" ] && [ ! -d "$WM/data_v3" ]; then
+  echo "extracting corpus on compute node"; tar xf "$WM/data_v3.tar" -C "$WM" && rm -f "$WM/data_v3.tar"
+fi
 python -m physwm.vlm.sft --config configs/sft_qwen3vl2b.yaml --data "$WM/data_v3" \
   --style box3d --frames 0 --views 0 --tasks A,B,N --limit 1024 --epochs 0.3 \
   --out "$WM/runs_b/smoke"

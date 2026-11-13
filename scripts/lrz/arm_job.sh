@@ -16,6 +16,9 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export DATA=$WM/data_v3 RUNS=$WM/runs_b
 export PATH=$WM/venv/bin:$PATH
 mkdir -p "$RUNS" logs
+if [ -f "$WM/data_v3.tar" ] && [ ! -d "$WM/data_v3" ]; then
+  echo "extracting corpus on compute node"; tar xf "$WM/data_v3.tar" -C "$WM" && rm -f "$WM/data_v3.tar"
+fi
 echo "host $(hostname) arm ${ARM:?} gpu:"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 bash scripts/run_b_matrix.sh "$ARM"
 echo "arm $ARM finished on $(hostname)"
