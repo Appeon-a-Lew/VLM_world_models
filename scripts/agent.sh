@@ -12,7 +12,15 @@
 #   scripts/agent.sh gen <config> <split> <seed_start> <n>
 #   scripts/agent.sh final-eval <exp_id>         # refused without a human approval token
 set -euo pipefail
-HOST=${AGENT_HOST:-nc-10-4-3}
+HOST=${AGENT_HOST:-}
+if [ -z "$HOST" ]; then
+  for h in nc-9-4-1 nc-10-4-2 nc-10-4-3; do
+    if ssh -o BatchMode=yes -o ConnectTimeout=8 -o LogLevel=ERROR "$h" 'test -d /var/tmp/toyi/wm' 2>/dev/null; then
+      HOST=$h; break
+    fi
+  done
+fi
+[ -n "$HOST" ] || { echo "no reachable GPU box with a run root; set AGENT_HOST" >&2; exit 3; }
 SSH=(ssh -o BatchMode=yes -o LogLevel=ERROR -o ConnectTimeout=20 "$HOST")
 remote() {  # remote <exec args...>; arguments are shell-quoted
   local q

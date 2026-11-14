@@ -173,6 +173,8 @@ def validate_spec(spec: dict, code: Path) -> dict:
     bad = [m for m in spec.get("ablations", ["none"]) if m not in ABLATION_MODES]
     if bad:
         raise Denied(f"unknown ablations {bad}; allowed {list(ABLATION_MODES)}")
+    if spec.get("style", "center") not in ("center", "qwen3d", "uvz", "box3d"):
+        raise Denied(f"unknown style {spec.get('style')!r}")
     return spec
 
 
@@ -267,12 +269,31 @@ def op_job(args) -> None:
     try:
         lora = spec.get("lora")
         if spec["kind"] == "train":
-            _run([sys.executable, "-m", "physwm.vlm.sft", "--config", str(code / spec["train_config"]),
-                  "--out", str(exp_dir / "model")], env_code, deadline, log, code)
+            sft = [sys.executable, "-m", "physwm.vlm.sft", "--config", str(code / spec["train_config"]),
+                   "--out", str(exp_dir / "model")]
+            if spec.get("style"):
+                sft += ["--style", spec["style"]]
+            if spec.get("frames"):
+                sft += ["--frames", ",".join(str(f) for f in spec["frames"])]
+            if spec.get("views"):
+                sft += ["--views", ",".join(str(v) for v in spec["views"])]
+            if spec.get("tasks"):
+                sft += ["--tasks", ",".join(spec["tasks"])]
+            if spec.get("use_pe") is False:
+                sft += ["--no-pe"]
+            _run(sft, env_code, deadline, log, code)
             lora = str(exp_dir / "model" / "adapter")
         model = spec.get("model", "Qwen/Qwen3-VL-2B-Instruct")
         infer = [sys.executable, "-m", "physwm.vlm.infer", "--data", str(DATA), "--model", model,
                  "--style", spec.get("style", "center"), "--batch-size", str(spec.get("batch_size", 32))]
+        if spec.get("frames"):
+            infer += ["--frames", ",".join(str(f) for f in spec["frames"])]
+        if spec.get("views"):
+            infer += ["--views", ",".join(str(v) for v in spec["views"])]
+        if spec.get("tasks"):
+            infer += ["--tasks", *spec["tasks"]]
+        if spec.get("use_pe") is False:
+            infer += ["--no-pe"]
         infer += ["--lora", lora] if lora else []
         infer += ["--limit", str(spec["eval_limit"])] if spec.get("eval_limit") else []
         pred = exp_dir / "pred"

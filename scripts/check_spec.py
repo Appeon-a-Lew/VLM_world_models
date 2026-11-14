@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[1]
 REQUIRED = ("id", "hypothesis", "change", "baseline", "kind", "budget_hours", "seed")
 # keep in sync with physwm/agent/exec.py ABLATION_MODES (cf_* = counterfactual action text, normal image)
 IMAGE_MODES = {"normal", "none", "blank", "swap", "cf_flip", "cf_impulse_0.5", "cf_impulse_2"}
-STYLES = {"center", "qwen3d", "uvz"}
+STYLES = {"center", "qwen3d", "uvz", "box3d"}
 
 
 def main(path):
@@ -39,6 +39,19 @@ def main(path):
         errors.append(f"unknown ablations {sorted(bad_modes)}; allowed {sorted(IMAGE_MODES)}")
     if spec.get("style", "center") not in STYLES:
         errors.append(f"unknown style '{spec.get('style')}'")
+    frames = spec.get("frames")
+    if frames is not None and not (isinstance(frames, list) and frames
+                                   and all(isinstance(f, int) and not isinstance(f, bool) and f >= 0 for f in frames)):
+        errors.append("frames must be a non-empty list of non-negative int indices")
+    views = spec.get("views")
+    if views is not None and not (isinstance(views, list) and views
+                                  and all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in views)):
+        errors.append("views must be a non-empty list of non-negative int indices")
+    if "use_pe" in spec and not isinstance(spec["use_pe"], bool):
+        errors.append("use_pe must be a bool")
+    tasks = spec.get("tasks")
+    if tasks is not None and (not isinstance(tasks, list) or not tasks or set(tasks) - {"A", "B", "N"}):
+        errors.append("tasks must be a non-empty subset of [A, B, N]")
     if spec.get("kind") == "train":
         worktree = spec_path.parents[3]
         cfg = worktree / str(spec.get("train_config", ""))
