@@ -8,4 +8,5 @@
 #SBATCH --mem=64G
 #SBATCH --time=06:00:00
 set -euo pipefail
-exec bash "$(dirname "$0")/seed_arm.sh" "${ARM:?}" "${SEED:?}"
+SCR=${SCRATCH:-${WORK:-$HOME/scratch}}
+exec bash "$SCR/wm/repo/scripts/lrz/seed_arm.sh" "${ARM:?}" "${SEED:?}"
