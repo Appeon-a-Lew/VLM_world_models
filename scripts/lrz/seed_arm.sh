@@ -19,9 +19,12 @@ VAL="val_id val_ood_objects val_ood_forces val_ood_config"
 ID=${ARM}_seed${SEED}
 OUT=$R/$ID
 case $ARM in
-  s_f1)      FR=0; STYLE=box3d;  PE="";        TASKS=A,B,N ;;
-  s_f1_nope) FR=0; STYLE=box3d;  PE="--no-pe"; TASKS=A,B,N ;;
-  l_f1)      FR=0; STYLE=center; PE="--no-pe"; TASKS=A,B ;;
+  s_f1)      FR=0;     STYLE=box3d;  PE="";        TASKS=A,B,N ;;
+  s_f1_nope) FR=0;     STYLE=box3d;  PE="--no-pe"; TASKS=A,B,N ;;
+  s_f3)      FR=0,1,2; STYLE=box3d;  PE="";        TASKS=A,B,N ;;
+  s_f3_nope) FR=0,1,2; STYLE=box3d;  PE="--no-pe"; TASKS=A,B,N ;;
+  l_f1)      FR=0;     STYLE=center; PE="--no-pe"; TASKS=A,B ;;
+  c_f1)      FR=0;     STYLE=center; PE="";        TASKS=A,B,N ;;
   *) echo "unsupported arm $ARM" >&2; exit 2 ;;
 esac
 if [ -f "$WM/data_v3.tar" ] && [ ! -d "$WM/data_v3" ]; then
