@@ -1,16 +1,32 @@
-# Research-agent policy (v1.0). Read by physwm/agent/exec.py (the only GPU entry point for the agent)
-# and by the loop instructions in research/LOOP.md.
+# Research-agent policy (v2.0). Read by physwm/agent/exec.py (the only GPU entry point for the
+# agent), by the loop instructions in research/LOOP.md, and by the OpenCode orchestrator.
 #
 # Principle: the agent may optimise the research implementation, but it cannot redefine what counts
 # as scientific success (metrics, final test sets, baselines).
 #
-# Enforcement is layered and NOT a sandbox: (1) Claude Code permission rules in .claude/settings.json
-# (agent can only reach the GPUs via scripts/agent.sh, cannot edit eval code / manifests on main),
-# (2) checks in physwm/agent/exec.py (budgets, protected splits, pinned eval code, approval tokens).
-# The agent's jobs run as the same unix user that owns the data.
+# Enforcement is layered and NOT a sandbox: (1) the OpenCode permission rules for the orchestrator
+# (agent can only reach the GPUs via scripts/agent.sh and scripts/agent_lrz.sh, cannot edit eval
+# code / policy / manifests on main), (2) checks in physwm/agent/exec.py (budgets, protected
+# splits, pinned eval code, approval tokens), (3) Slurm accounting on LRZ. The agent's jobs run as
+# the same unix user that owns the data.
+#
+# Changelog
+#   2.0 (2026-11-14, phase 2 / OpenCode harness)
+#     - resources.host -> resources.hosts: ordered probe list for agent.sh (nc-9-4-1, nc-10-4-2,
+#       nc-10-4-3).
+#     - added resources.lrz: Slurm backend scripts/agent_lrz.sh, 6 concurrent jobs, 8 h wall,
+#       --gres=gpu:1, nice -n 10, no status polling loops.
+#     - data.validation_splits gains val_ood_config_nocam (phase-2 configuration axis,
+#       configs/sim_ood_config_nocam.yaml).
+#     - protected_splits / protected_manifest unchanged; a v3 final-test manifest is a separate
+#       human-approved decision.
+#   1.0 (2026-10-24, phase 1): initial policy; single lab host nc-10-4-3, 1 concurrent job.
+#
+# Phase-2 leaderboard reference arms (s_f1, s_f1_nope, l_f1, c_f1) are listed in
+# research/RESULTS_phase2.md, not here. Changing the baseline list below is a human decision.
 
 policy:
-  version: "1.0"
+  version: "2.0"
   project: adl4cv-worldmodels
   default_decision: deny
 
@@ -25,25 +41,42 @@ permissions:
   run_large_gpu_experiment: auto
   change_final_test_definitions: approval
   run_final_test: approval          # token from scripts/approve.sh (human only)
-  publish_results: approval
+  publish_results: approval         # paper / external posts. Standing exception: the validation-only
+                                    # dashboard bundle refresh in research/LOOP.md is pre-approved.
   send_external_messages: approval
 
 resources:
-  host: nc-10-4-3
-  max_concurrent_gpu_jobs: 1
+  # agent.sh probes these in order and uses the first reachable box with a free GPU.
+  hosts: [nc-9-4-1, nc-10-4-2, nc-10-4-3]
+  max_concurrent_gpu_jobs: 1        # lab backend only; LRZ has its own limit below
   small_experiment_max_hours: 3
   large_experiment_max_hours: 24
-  max_gpu_hours_per_day: 12
+  max_gpu_hours_per_day: 12         # shared across lab + LRZ
   max_gpu_hours_per_week: 48
   gpu_free_max_used_mib: 2500       # refuse to launch if someone else is using the GPU
   retry_failed_job_max: 1
 
+  lrz:                              # scripts/agent_lrz.sh, Slurm backend
+    partition: lrz-hgx-h100-94x4
+    max_concurrent_jobs: 6
+    gres: "gpu:1"                   # every arm is single-GPU
+    nice: 10
+    time_limit_hours: 8             # hard wall; split arms that cannot finish in time
+    no_slurm_polling_loops: true    # one status call per check, never a squeue/sacct loop
+
 data:
-  protected_splits: [id_test, ood_objects, ood_forces, ood_config]   # final held-out test
+  # final held-out test. A v3 final-test manifest does not exist yet: creating one is a separate
+  # human-approved decision, and the manifest below remains the legacy (v1/v2) artefact.
+  protected_splits: [id_test, ood_objects, ood_forces, ood_config]
   protected_manifest: manifests/final_test.json
-  validation_splits: [val_id, val_ood_objects, val_ood_forces, val_ood_config]
-  # single- and two-factor variants of val_ood_config (human-generated, seeds 8.5M-8.9M): evaluated in every job and
-  # reported in results.md / compare, never part of the primary metric
+  validation_splits: [val_id, val_ood_objects, val_ood_forces, val_ood_config, val_ood_config_nocam]
+  # val_ood_config_nocam is the phase-2 configuration axis (camera in-distribution, count + placement
+  # changed); generated from configs/sim_ood_config_nocam.yaml. The legacy val_ood_config compound
+  # shift (camera 12-25 deg) stays descriptive only.
+  # exec.py loads exactly these splits in every job: generate the nocam split (IDEA-104) before the
+  # first submit after this policy bump, or jobs will fail on the missing split.
+  # single- and two-factor variants of the legacy val_ood_config (human-generated, seeds 8.5M-8.9M):
+  # evaluated in every job and reported in results.md / compare, never part of the primary metric
   diagnostic_splits: [val_diag_elev, val_diag_count, val_diag_corner, val_diag_elev_corner]
   ablation_split: val_id            # image-dependence test runs here
   agent_split_prefixes: [train, val, dev]   # names the agent may generate
