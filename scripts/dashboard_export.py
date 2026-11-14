@@ -163,8 +163,6 @@ def filter_payload(payload: dict, copied: set[str]) -> dict:
             frames.append({**frame, "views": views})
     payload["frames"] = frames
     payload["n_frames"] = len(frames)
-    thumb = payload.get("thumb")
-    payload["thumb"] = thumb if thumb in copied else None
     return payload
 
 
@@ -339,8 +337,6 @@ def main() -> None:
         summaries = []
         for episode_id in ids:
             summary = dict(app.episode_summary(split, episode_id))
-            if episode_id not in copied:
-                summary["thumb"] = None  # image not part of the bundle
             summaries.append(summary)
         write_json(out / "api" / "episodes" / f"{split}.json", summaries, counts)
 

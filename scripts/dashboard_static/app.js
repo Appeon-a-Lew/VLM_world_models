@@ -140,7 +140,7 @@ async function fetchJSON(rel) {
   const path = queryAt === -1 ? rel : rel.slice(0, queryAt);
   const query = queryAt === -1 ? "" : rel.slice(queryAt);
   const url = `${DASH_CONFIG.api_base}${path}.json${query}`;
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!response.ok) {
     let message = response.statusText || `HTTP ${response.status}`;
     try {
@@ -397,6 +397,10 @@ function renderEpisodes() {
       img.decoding = "async";
       img.alt = "";
       img.src = fileURL(state.split, episode.episode_id, episode.thumb);
+      img.onerror = () => {
+        const fallback = make("span", "episode-thumb-fallback", "no rgb");
+        if (img.parentNode) img.replaceWith(fallback);
+      };
       item.append(img);
     } else {
       item.append(make("span", "episode-thumb-fallback", "no rgb"));
