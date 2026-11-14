@@ -146,24 +146,12 @@ def copy_episode_files(app: dash.Dashboard, split: str, episode_id: str,
 
 
 def filter_payload(payload: dict, copied: set[str]) -> dict:
-    """Drop frame views whose image was not exported (keeps JSON loadable)."""
-    payload = dict(payload)
-    frames = []
-    for frame in payload.get("frames") or []:
-        views = []
-        for view in frame.get("views") or []:
-            rgb = view.get("rgb")
-            if not rgb or rgb not in copied:
-                continue
-            entry = dict(view)
-            if entry.get("seg") and entry["seg"] not in copied:
-                entry["seg"] = None
-            views.append(entry)
-        if views:
-            frames.append({**frame, "views": views})
-    payload["frames"] = frames
-    payload["n_frames"] = len(frames)
-    return payload
+    """Keep every frame/view name so remote bundles can stream files from the corpus.
+
+    ``copied`` only documents which files are embedded in a static bundle; names are
+    retained regardless so that ``file_template`` (e.g. the HF ``v3/`` corpus) resolves.
+    """
+    return dict(payload)
 
 
 def readme(out: Path, root: Path, splits: list[str], n_episodes: int,
