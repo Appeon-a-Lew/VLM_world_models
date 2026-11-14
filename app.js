@@ -1154,6 +1154,27 @@ async function selectEpisode(episodeId) {
   try {
     const data = await fetchJSON(`episode/${encode(state.split)}/${encode(episodeId)}`);
     if (loadToken !== state.loadToken || seq !== state.navSeq) return;
+    if (!(Array.isArray(data.frames) && data.frames.length) && /^https?:/.test(DASH_CONFIG.file_template)) {
+      /* Remote bundles may ship frame-less episode JSONs; rebuild the frame list
+         from the episode's meta.json, which lives next to the images. */
+      try {
+        const meta = await (await fetch(fileURL(state.split, episodeId, "meta.json"), { cache: "no-store" })).json();
+        const fts = Array.isArray(meta.frame_times) ? meta.frame_times : [0.0, 1.0];
+        const nviews = (meta.views && meta.views.length) || 1;
+        const files = meta.files || {};
+        data.frames = fts.map((t, k) => ({
+          k, t,
+          views: Array.from({ length: nviews }, (_, v) => {
+            const kk = String(k).padStart(2, "0");
+            const rgb = files[`rgb_v${v}f${kk}`] || (v === 0 ? files[`rgb_t${Math.round(t)}`] : undefined);
+            const seg = files[`seg_v${v}f${kk}`] || (v === 0 ? files[`seg_t${Math.round(t)}`] : undefined);
+            return rgb ? { view: v, rgb, seg: seg || null } : null;
+          }).filter(Boolean),
+        })).filter((f) => f.views.length);
+        data.n_frames = data.frames.length;
+        if (!Array.isArray(data.views) || !data.views.length) data.views = meta.views || [meta.camera];
+      } catch (_) { /* remote meta unavailable; viewer stays empty */ }
+    }
     state.episode = data;
     state.episodeId = data.episode_id || episodeId;
     state.frameIdx = 0;
