@@ -198,3 +198,9 @@ All numbers are on validation splits unless marked FINAL (final test, human-appr
   - Slope s = 1.10 has no CI; threshold 0.8; physics for sliding is 2, so magnitude is under-scaled. Alpha 0.5/2 are partly outside the training impulse range and quantised to 2 decimals.
   - Flip evidence is token-level and cannot separate lexical mapping from camera-frame semantics.
   - One adapter, one seed.
+
+## C-013 (phase-2, tentative) The PE-on grounding error is a per-episode radial scale distortion, not a visible-surface read-out
+- **claim**: With the OneCanvas-style xyz PE trained at 50x LR and zero-init gate, the model's t=0 centres keep image-plane direction and within-scene relative depth nearly exact but carry a per-episode multiplicative range/depth-scale error (pred ~= s_ep * gt, s_ep = 1.043 +- 0.110), instead of copying visible-surface xyz.
+- **evidence**: research/experiments/idea103_surface_probe/report.md (analyze_pe_surface.py): rad +0.0373 m [+0.0270, +0.0472] on val_id where a surface read-out predicts ~= -0.074 m; rad/d_near = +0.51 with only 9.0 % of objects in the surface band [-1.2, -0.8]; within-episode corr(rad, d_near) = -0.11, fixed-effects slope -0.18 [-0.33, -0.03] vs -1; radial share of squared error 99.3 %; tangential error 0.0047 m; scale-model residual 0.020 m vs 0.100 m mean error; PE-off arm s_ep = 0.998 +- 0.015. Paired radial difference s_f1 - s_f1_nope = +0.0404 [+0.0299, +0.0505] on val_id.
+- **status**: tentative (one seed per arm; one probe implementation; d_near proxy exact for boxes, approximate for curved shapes).
+- **caveats**: val_ood_config rows are confounded by the legacy compound camera shift (PE-off radial +0.103 m exceeds PE-on +0.039 m there); the scale interpretation assumes errors act on camera-frame depth ranges, verified indirectly via the 0.020 m scale-model residual.

@@ -25,12 +25,18 @@ Seed repeat of s_f1 (seed 1) moves every split mean by <= 0.004 m, so the
 config 0.270 vs legacy 0.155 / 0.510 / 0.269). The box3d format without PE is
 the best grounding *and* the best dynamics model we have (below).
 
-Hypothesis for the PE harm (to test, not yet claimed): patch tokens carry
-visible-surface xyz; the model shortcuts to reading them out instead of
-inferring body centres (error scale matches surface-to-centre offsets).
-OneCanvas's stage-1 PE-norm pinning, which we omitted, exists partly to prevent
-feature takeover. PE-fix arms (norm-pinned / lower PE lr / centre-offset
-targets) are the next training round.
+Hypothesis for the PE harm — TESTED 2026-11-14 (IDEA-103, idea103_surface_probe,
+provisional claim C-013): NOT a visible-surface copy. The PE-on Task A error is
+99.3 % radial but with the opposite sign of a surface read-out (rad +0.037 m
+[+0.027,+0.047] vs −d_near ≈ −0.074 m), does not track d_near across objects
+(corr −0.11, slope −0.18 [−0.33,−0.03] vs −1), and is instead a per-episode
+multiplicative range/depth-scale distortion: pred ≈ s_ep·gt with
+s_ep = 1.043 ± 0.110 (PE off: 0.998 ± 0.015); image-plane direction and
+within-scene relative depth stay nearly exact (scale-model residual 0.020 m vs
+0.100 m error). val_ood_config is confounded by the legacy camera shift
+(PE-off radial +0.103 m > PE-on +0.039 m). Fix arms therefore target scale
+calibration: IDEA-101 norm-pinned PE, IDEA-102 PE lr 5x; IDEA-109 adds s_ep as
+a standing metric on every future arm.
 
 ## 2. Endpoint prediction (Task B, t=+1 s), target mean L2
 
@@ -94,7 +100,8 @@ first 0.2 s of motion improves B beyond the model's own-static baseline.
 
 ## 6. Next experiments (ordered)
 
-1. PE-fix arm: norm-pinned PE (stage-1 recipe) and/or PE lr 5x, same data/recipe.
+1. PE-fix arm: norm-pinned PE (stage-1 recipe) and/or PE lr 5x, same data/recipe —
+   targets the per-episode scale distortion of §1; report s_ep for every arm (IDEA-109).
 2. val_ood_config_nocam generation (~30 min GPU) + inference-only rescoring of all arms.
 3. Seed-1 completion for l_f1 / s_f1_nope (queued) -> CI-backed 2x2.
 4. Only then: view-count axis (n_views 2/4) and estimated-depth variant.

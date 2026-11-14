@@ -14,8 +14,8 @@ best dynamics arm (A val_id 0.0127, B val_id 0.1423) while PE-on costs 8.7 cm on
 dynamics is the bottleneck. Therefore the PE mechanism is the highest-value question, and the no-GPU probe
 that can run while the GPU is busy is ranked alongside the first training arm.
 
-1. **IDEA-103** PE error-geometry probe (NG). Runs now; if PE-on errors are radial it also
-   tells 101 what a norm fix should recover, and it sizes 102's arms.
+1. **IDEA-103** DONE 2026-11-14: not supported (per-episode radial scale distortion);
+   successor metric IDEA-109; fix arms remain 101/102, now aimed at scale calibration.
 2. **IDEA-101** PE norm-pinned training arm (G, one train arm). The direct test of the
    feature-takeover mechanism and the stage-1 recipe we omitted.
 3. **IDEA-102** PE lr sweep, 50× → 5× (G, 1–2 train arms). Config-only alternative to 101;
@@ -75,6 +75,15 @@ run or a v3 manifest is `needs-human` by construction.
 - status: proposed
 
 ## IDEA-103 No-GPU probe: are PE-on errors aligned with the view ray / surface-to-centre offset?
+
+- status: **done 2026-11-14 (idea103_surface_probe): NOT SUPPORTED.** PE-on error is radial
+  (99.3 % of squared error) but with the OPPOSITE sign of a surface read-out (rad +0.037 m
+  [ +0.027, +0.047 ] vs −d_near ≈ −0.074 m), does not track d_near across objects within an
+  episode (corr −0.11, slope −0.18 [−0.33,−0.03] vs −1), and is instead a per-episode
+  multiplicative range/depth-scale distortion: pred ≈ s_ep·gt, s_ep = 1.043 ± 0.110
+  (PE off: 0.998 ± 0.015); scale model residual 0.020 m vs 0.100 m error.
+  val_ood_config is confounded by the legacy camera shift (PE-off radial +0.103 m > PE-on).
+  Consequence: 101/102 target scale calibration; IDEA-109 makes s_ep a standing metric.
 
 - source: RESULTS_phase2 §1 ("error scale matches surface-to-centre offsets" — currently a
   hypothesis, not a claim).
@@ -175,3 +184,15 @@ run or a v3 manifest is `needs-human` by construction.
 - GPU cost: eval-only per arm, no training. Check that the estimator loads with the current
   `transformers` install before planning (Depth Anything v2 did in phase 1; no new dependency).
 - status: proposed
+## IDEA-109 Standing metric: per-episode radial scale factor s_ep on every arm
+
+- source: IDEA-103 verdict (scale distortion, not surface copy).
+- hypothesis: any PE/config change that fixes grounding should drive s_ep -> 1.00 with
+  episode-to-episode spread <= 0.02 (the PE-off level); s_ep separates scale fixes from
+  generic error reductions.
+- cheapest test: extend analyze_pe_surface.py with a --table mode emitting s_ep mean/spread
+  per arm; call it in the loop's report step for every finished arm (no GPU).
+- expected signature: norm-pinned or low-lr PE arms with A-error near PE-off AND s_ep ~ 0.998
+  => scale distortion removed; A-error down but s_ep still ~1.04 => different mechanism.
+- GPU cost: 0.
+- status: proposed (2026-11-14).
