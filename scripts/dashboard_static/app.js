@@ -52,6 +52,18 @@ const DASH_CONFIG = (() => {
 })();
 
 const TASK_TIME = { A: 0.0, B: 1.0 };
+
+/* Task N targets the first stored frame AFTER the last input frame of the record
+   (0.1 s for 1-frame arms, 0.3 s for frames 0,1,2); falls back to the next frame. */
+function taskTimeFor(task, record) {
+  if (task !== "N") return TASK_TIME[task];
+  const ep = state.episode;
+  const fts = (ep && Array.isArray(ep.frame_times) && ep.frame_times.length) ? ep.frame_times : [0.0, 1.0];
+  const frames = (record && Array.isArray(record.frames) && record.frames.length) ? record.frames : [0];
+  const tLast = fts[Math.min(frames[frames.length - 1], fts.length - 1)];
+  const next = fts.find((t) => t > tLast + 1e-9);
+  return next === undefined ? tLast : next;
+}
 const TASK_TOL = 0.051;
 
 /* Edge index order follows viz_samples.box_corners: sx/sy/sz with sz innermost. */
@@ -97,6 +109,7 @@ const els = {
   predSource: $("#pred-source"),
   taskA: $("#task-A"),
   taskB: $("#task-B"),
+  taskN: $("#task-N"),
   predNote: $("#pred-note"),
   legend: $("#legend"),
   predTable: $("#pred-table"),
@@ -118,7 +131,7 @@ const state = {
   predName: "",
   records: [],
   show: { gt: true, labels: true, preds: true, errors: true, seg: false },
-  tasks: { A: true, B: true },
+  tasks: { A: true, B: true, N: true },
   metrics: null,
   navSeq: 0,
   loadToken: 0,
@@ -492,7 +505,7 @@ function updatePredNote() {
   if (!state.predName) {
     notes.push("No source selected. Predictions are configured at export time.");
   } else if (!state.records.length) {
-    notes.push(`No records for “${state.predName}” on this episode.`);
+    notes.push(`No records for “${state.predName}” on this episode. Arms are evaluated on val_id / val_ood_objects / val_ood_forces / val_ood_config only.`);
   } else {
     const tasks = [...new Set(state.records.map((record) => record.task).filter(Boolean))];
     notes.push(`${state.records.length} record(s) · tasks ${tasks.join(" / ") || "?"}.`);
@@ -731,12 +744,13 @@ function drawOverlay() {
   /* predicted centres, only on their task-time frame and only for view 0 */
   const canOverlayPreds = state.show.preds && state.records.length && entry.view === 0;
   if (canOverlayPreds) {
-    for (const task of ["A", "B"]) {
+    for (const task of ["A", "B", "N"]) {
       if (!state.tasks[task]) continue;
-      if (Math.abs(Number(frame.t) - TASK_TIME[task]) > TASK_TOL) continue;
       const record = recordFor(task);
       if (!record) continue;
-      const gtRow = stateRowForTime(data, TASK_TIME[task]);
+      const tTask = taskTimeFor(task, record);
+      if (Math.abs(Number(frame.t) - tTask) > TASK_TOL) continue;
+      const gtRow = stateRowForTime(data, tTask);
       objects.forEach((object, index) => {
         const prediction = predValue(record, object, index);
         if (!validVec(prediction)) return;
@@ -919,12 +933,12 @@ function renderPredTable() {
   const objects = Array.isArray(data.objects) ? data.objects : [];
   let rendered = false;
 
-  for (const task of ["A", "B"]) {
+  for (const task of ["A", "B", "N"]) {
     if (!state.tasks[task]) continue;
     rendered = true;
     const record = recordFor(task);
     const heading = make("h4");
-    heading.append(`Task ${task} · t = ${TASK_TIME[task].toFixed(1)} s`);
+    heading.append(`Task ${task} · t = ${taskTimeFor(task, record).toFixed(1)} s`);
     const stats = make("span", null, "");
     heading.append(stats);
     box.append(heading);
@@ -1002,7 +1016,7 @@ function renderRaw() {
     box.append(make("p", "muted small", "No records for this episode."));
     return;
   }
-  for (const task of ["A", "B"]) {
+  for (const task of ["A", "B", "N"]) {
     const records = state.records.filter((record) => record.task === task);
     records.forEach((record, index) => {
       const details = document.createElement("details");
@@ -1195,7 +1209,8 @@ async function route() {
   if (!state.splits.length) return;
   setTab("viewer");
   if (!split) {
-    const first = state.splits[0].split;
+    const preferred = state.splits.find((s) => s.split === "val_id");
+    const first = (preferred || state.splits[0]).split;
     window.history.replaceState(null, "", `#${encode(first)}`);
     await selectSplit(first, id);
     return;
@@ -1256,6 +1271,11 @@ function bindUI() {
   });
   els.taskB.addEventListener("change", (event) => {
     state.tasks.B = event.target.checked;
+    renderPredTable();
+    drawOverlay();
+  });
+  els.taskN.addEventListener("change", (event) => {
+    state.tasks.N = event.target.checked;
     renderPredTable();
     drawOverlay();
   });
