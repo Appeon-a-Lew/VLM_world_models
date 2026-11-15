@@ -947,7 +947,7 @@ function renderPredTable() {
       box.append(make("div", "empty", `No record for task ${task} in “${state.predName}”.`));
       continue;
     }
-    const gtRow = stateRowForTime(data, TASK_TIME[task]);
+    const gtRow = stateRowForTime(data, taskTimeFor(task, record));
     const table = document.createElement("table");
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
