@@ -137,3 +137,25 @@ def test_save_and_load_pe_roundtrip(tmp_path):
     assert again.hidden == 6
     xyz, feats = torch.randn(4, 3), torch.randn(4, 6)
     assert torch.equal(again(xyz, feats), emb(xyz, feats))
+
+
+def test_infer_load_pe_for_finds_parent_pe_and_fails_loudly_if_missing(tmp_path):
+    import json
+    from physwm.vlm.infer import load_pe_for
+
+    model = _tiny_model().eval()
+    run_dir = tmp_path / "run"
+    adapter_dir = run_dir / "adapter"
+    adapter_dir.mkdir(parents=True)
+    (run_dir / "config.json").write_text(json.dumps({"pe": True}))
+
+    # Must fail loudly if config says pe=true and pe.pt is missing (unless enabled=False)
+    with pytest.raises(FileNotFoundError, match="pe.pt"):
+        load_pe_for(model, str(adapter_dir), enabled=True)
+    assert load_pe_for(model, str(adapter_dir), enabled=False) is None
+
+    # sft.py writes pe.pt in run_dir (parent of adapter_dir)
+    emb = P.XYZEmbedding(hidden=64)
+    P.save_pe(run_dir / "pe.pt", emb)
+    loaded = load_pe_for(model, str(adapter_dir), enabled=True)
+    assert loaded is not None and loaded.hidden == 64

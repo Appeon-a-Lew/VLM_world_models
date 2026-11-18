@@ -47,9 +47,26 @@ def load_model(model_id: str, lora: str | None = None):
 
 
 def load_pe_for(model, lora: str | None, enabled: bool):
-    """Attach ``pe.pt`` stored next to the adapter; None when absent or disabled (B5)."""
-    path = Path(lora) / "pe.pt" if lora and enabled else None
-    if path is None or not path.exists():
+    """Attach ``pe.pt`` saved with the adapter; None when absent or disabled (B5).
+
+    ``sft.py`` writes ``<out>/adapter`` and ``<out>/pe.pt``, so ``--lora <out>/adapter``
+    places ``pe.pt`` in ``Path(lora).parent``. Checks both ``Path(lora) / "pe.pt"`` and
+    ``Path(lora).parent / "pe.pt"``, and fails loudly if ``config.json`` says ``pe=true``
+    but ``pe.pt`` is missing.
+    """
+    if not lora or not enabled:
+        return None
+    lora_path = Path(lora)
+    candidates = [lora_path / "pe.pt", lora_path.parent / "pe.pt"]
+    path = next((p for p in candidates if p.exists()), None)
+    if path is None:
+        for cfg_path in (lora_path / "config.json", lora_path.parent / "config.json"):
+            if cfg_path.exists():
+                cfg = json.loads(cfg_path.read_text())
+                if cfg.get("pe"):
+                    raise FileNotFoundError(
+                        f"training config {cfg_path} has pe=true, but pe.pt was not found in {candidates}"
+                    )
         return None
     pe = load_pe(path).float()
     install_pe(model, module=pe)
@@ -118,6 +135,7 @@ def main():
     frames, views = parse_indices(args.frames), parse_indices(args.views)
     pairs = [(fr, vw) for fr in frames for vw in views]
     model, processor = load_model(args.model, args.lora)
+    merge = int(processor.image_processor.merge_size)
     pe = load_pe_for(model, args.lora, enabled=not args.no_pe)
     grid_cache: dict = {}
     use_pe = pe is not None and args.image_mode in ("normal", "swap")
@@ -140,7 +158,8 @@ def main():
                         d_depth, ep_depth = partner if partner is not None else (d, ep)
                         grids = image_grid_rows(processor, images, grid_cache)
                         xyz.append(torch.cat([
-                            frame_token_xyz(d_depth, ep_depth, frame=fr, view=vw, grid_thw_row=g)
+                            frame_token_xyz(d_depth, ep_depth, frame=fr, view=vw,
+                                            grid_thw_row=g, merge=merge)
                             for (fr, vw), g in zip(pairs, grids)
                         ]))
                 if pe is not None:

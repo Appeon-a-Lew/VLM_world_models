@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from physwm import geometry as G
+from physwm.eval.metrics import task_time
 from physwm.schema import load_split
 
 KEYS = ("err_B", "err_ownstatic", "err_gtstatic", "err_disp",
@@ -43,6 +44,7 @@ def target_rows(ep, recs: list[dict]) -> dict:
     """Per-episode paired errors for the pushed target; empty dict if A or B missing."""
     oid = ep.action.target
     got = {r["task"]: r["objects"].get(str(oid)) for r in recs}
+    n_rec = next((r for r in recs if r["task"] == "N"), None)
     a, b, n = got.get("A"), got.get("B"), got.get("N")
     out: dict = {}
     if a is not None and b is not None:
@@ -52,8 +54,9 @@ def target_rows(ep, recs: list[dict]) -> dict:
         out["err_ownstatic"] = float(np.linalg.norm(a_v - gt1))
         out["err_gtstatic"] = float(np.linalg.norm(gt0 - gt1))
         out["err_disp"] = float(np.linalg.norm(gt0 + (b_v - a_v) - gt1))
-    if a is not None and n is not None:
-        tn = ep.frame_times[1]
+    if a is not None and n is not None and n_rec is not None:
+        frames = tuple(n_rec.get("frames", (0,)) or (0,))
+        tn = task_time(ep, "N", frames)
         gtn, gt0n = _gt_cam(ep, tn, oid), _gt_cam(ep, 0.0, oid)
         out["err_N"] = float(np.linalg.norm(np.asarray(n, float) - gtn))
         out["err_Nstatic"] = float(np.linalg.norm(np.asarray(a, float) - gtn))

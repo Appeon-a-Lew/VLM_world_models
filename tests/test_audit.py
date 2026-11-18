@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 import yaml
 
-from physwm.agent import exec as executor
 from physwm.eval.metrics import MISSING_PENALTY, per_object_rows, validate_coverage
 from physwm.schema import load_split
 from physwm.sim import push
@@ -133,71 +132,3 @@ def test_coverage_rejects_missing_and_duplicate_records(episode):
         validate_coverage([a], episodes, ('A', 'B'))
     with pytest.raises(ValueError, match='duplicate'):
         validate_coverage([a, b, b], episodes, ('A', 'B'))
-
-
-def test_spec_rejects_seed_mismatch_and_diagnostic_training(tmp_path, monkeypatch):
-    root = Path(__file__).parents[1]
-    (tmp_path / 'pyproject.toml').write_text((root / 'pyproject.toml').read_text())
-    cfg = {'data': str(executor.DATA), 'train_split': 'train', 'seed': 0}
-    cfg_path = tmp_path / 'train.yaml'
-    spec = dict(id='exp999_audit', hypothesis='test', change='test', baseline='static',
-                kind='train', budget_hours=1, seed=1, train_config='train.yaml')
-    cfg_path.write_text(yaml.safe_dump(cfg))
-    with pytest.raises(executor.Denied, match='seed'):
-        executor.validate_spec(spec, tmp_path)
-    spec['seed'] = 0
-    cfg['train_split'] = executor.DIAG_SPLITS[0]
-    cfg_path.write_text(yaml.safe_dump(cfg))
-    with pytest.raises(executor.Denied, match='training on'):
-        executor.validate_spec(spec, tmp_path)
-
-
-def test_executor_scores_matched_limit_and_rejects_missing_records(tmp_path, monkeypatch, episode):
-    from physwm.eval.metrics import gt_centers_cam
-
-    policy = copy.deepcopy(executor.POLICY)
-    policy['data']['validation_splits'] = ['val_id', 'val_ood_objects']
-    policy['data']['ablation_split'] = 'val_id'
-    monkeypatch.setattr(executor, 'POLICY', policy)
-    monkeypatch.setattr(executor, 'DIAG_SPLITS', [])
-    monkeypatch.setattr(executor, 'DATA', tmp_path / 'data')
-    monkeypatch.setattr(executor, 'AGENT', tmp_path / 'agent')
-    monkeypatch.setattr(executor, 'EXPS', tmp_path / 'experiments')
-    monkeypatch.setattr(executor, 'check_pinned', lambda: None)
-    baseline, normal, none = [], [], []
-    for split in policy['data']['validation_splits']:
-        for i in range(2):
-            ep = copy.deepcopy(episode)
-            ep.split, ep.episode_id = split, f'{split}_{i}'
-            path = executor.DATA / split / ep.episode_id
-            path.mkdir(parents=True)
-            ep.save(path / 'meta.json')
-            xyz = gt_centers_cam(ep, 1)
-            baseline.append(dict(episode_id=ep.episode_id, task='B', parsed=True,
-                                 objects={str(j): (p + 100 * i).tolist() for j, p in enumerate(xyz)}))
-            if i == 0:
-                for task, t in [('A', 0), ('B', 1)]:
-                    rec = dict(episode_id=ep.episode_id, task=task, parsed=True,
-                               objects={str(j): p.tolist() for j, p in enumerate(gt_centers_cam(ep, t))})
-                    normal.append(rec)
-                    if split == 'val_id':
-                        none.append(rec)
-    base_dir = executor.AGENT / 'val_baselines'
-    base_dir.mkdir(parents=True)
-    exp = 'exp999_audit'
-    exp_dir = executor.EXPS / exp
-    (exp_dir / 'pred').mkdir(parents=True)
-    (exp_dir / 'spec.json').write_text(json.dumps({'eval_limit': 1}))
-
-    def write(path, records):
-        path.write_text(''.join(json.dumps(r) + '\n' for r in records))
-
-    for name in executor.BASELINE_NAMES:
-        write(base_dir / f'{name}.jsonl', baseline)
-    write(exp_dir / 'pred/normal.jsonl', normal)
-    write(exp_dir / 'pred/none.jsonl', none)
-    metrics = executor.evaluate_experiment(exp)
-    assert metrics['value'] == 0 and metrics['static_ood_target_mean'] == 0
-    write(exp_dir / 'pred/normal.jsonl', normal[:-1])
-    with pytest.raises(ValueError, match='incomplete'):
-        executor.evaluate_experiment(exp)

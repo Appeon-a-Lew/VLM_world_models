@@ -1,0 +1,20 @@
+# Minimal deterministic starting config: 1 box, fixed density & friction, no direction jitter.
+# Verify grounding and dynamics here first before re-introducing latent uncertainty or OOD shifts.
+base: sim_train.yaml
+name: simple
+
+objects:
+  count: [1, 1]
+  shapes: [box]
+  density: [600, 600]
+  friction: [0.45, 0.45]
+
+push:
+  direction_jitter_deg: 0
+  aim_at_other_prob: 0.0
+  speed: [0.4, 1.2]
+
+sim:
+  store_times: [0.0, 1.0]
+  frame_times: [0.0, 1.0]
+  n_views: 1

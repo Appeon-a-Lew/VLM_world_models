@@ -254,7 +254,10 @@ def main():
                 log.flush()
                 running = []
             if step % cfg["save_every"] == 0:
-                model.save_pretrained(out / f"checkpoint-{step}")
+                ckpt = out / f"checkpoint-{step}"
+                model.save_pretrained(ckpt)
+                if pe is not None:
+                    save_pe(ckpt / "pe.pt", pe)
             if step >= total_steps:
                 break
     model.save_pretrained(out / "adapter")
