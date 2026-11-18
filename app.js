@@ -1041,6 +1041,209 @@ function renderRaw() {
 }
 
 /* ------------------------------------------------------------------ */
+/* minimal markdown renderer (metrics tab)                             */
+/* Headings, GFM tables, lists, blockquotes, fenced code, rules and    */
+/* inline **strong** / *em* / `code` / [links].  Builds DOM nodes only, */
+/* never innerHTML, so bundle content cannot inject markup.            */
+/* ------------------------------------------------------------------ */
+
+const MD_TABLE_SEP = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+const MD_LIST_ITEM = /^\s*([-*+]|\d+\.)\s+/;
+const MD_RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+const MD_NUMBER = /^[−+\-]?\d[\d.,]*(?:\s*\(.*\)|\s*\[.*\])?$/;
+
+function mdRowCells(line) {
+  let text = String(line).trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").map((cell) => cell.trim());
+}
+
+function mdIsTableStart(lines, i) {
+  if (i + 1 >= lines.length || !lines[i].includes("|")) return false;
+  if (!MD_TABLE_SEP.test(lines[i + 1])) return false;
+  return mdRowCells(lines[i]).length === mdRowCells(lines[i + 1]).length;
+}
+
+/* explicit :---: alignment only; null means "infer from the cells". */
+function mdAlignment(separator) {
+  return mdRowCells(separator).map((cell) => {
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return null;
+  });
+}
+
+function mdInline(text) {
+  const nodes = [];
+  const rules = [
+    [/^`([^`]+)`/, (m) => make("code", "md-inline-code", m[1])],
+    [/^\*\*([^*]+)\*\*/, (m) => make("strong", null, m[1])],
+    [/^\*([^*]+)\*/, (m) => make("em", null, m[1])],
+    [/^\[([^\]]+)\]\(([^)\s]+)\)/, (m) => {
+      const link = make("a", null, m[1]);
+      link.href = m[2];
+      if (/^https?:/i.test(m[2])) { link.target = "_blank"; link.rel = "noopener"; }
+      return link;
+    }],
+  ];
+  let buffer = "";
+  let rest = String(text);
+  const flush = () => {
+    if (buffer) { nodes.push(document.createTextNode(buffer)); buffer = ""; }
+  };
+  while (rest.length) {
+    let hit = null;
+    for (const [pattern, build] of rules) {
+      const match = pattern.exec(rest);
+      if (match) { hit = { match, build }; break; }
+    }
+    if (hit) {
+      flush();
+      nodes.push(hit.build(hit.match));
+      rest = rest.slice(hit.match[0].length);
+    } else {
+      buffer += rest[0];
+      rest = rest.slice(1);
+    }
+  }
+  flush();
+  return nodes;
+}
+
+function mdCell(tag, text, alignment) {
+  const cell = make(tag, alignment === "right" ? "num" : alignment === "center" ? "center" : null);
+  cell.append(...mdInline(text));
+  return cell;
+}
+
+function mdTable(header, alignment, rows) {
+  const wrap = make("div", "md-table-wrap");
+  const table = make("table", "md-table");
+  const thead = make("thead");
+  const headRow = make("tr");
+  header.forEach((cell, index) => headRow.append(mdCell("th", cell, alignment[index])));
+  thead.append(headRow);
+  table.append(thead);
+  if (rows.length) {
+    const tbody = make("tbody");
+    rows.forEach((row) => {
+      const tr = make("tr");
+      header.forEach((_, index) => tr.append(mdCell("td", row[index] ?? "", alignment[index])));
+      tbody.append(tr);
+    });
+    table.append(tbody);
+  }
+  wrap.append(table);
+  return wrap;
+}
+
+function mdStartsBlock(lines, i) {
+  const line = lines[i];
+  return /^\s*```/.test(line) || mdIsTableStart(lines, i) || /^(#{1,6})\s+/.test(line)
+    || /^\s*>/.test(line) || MD_LIST_ITEM.test(line) || MD_RULE.test(line);
+}
+
+function mdAppendBlocks(parent, lines) {
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i += 1; continue; }
+
+    if (/^\s*```/.test(line)) {
+      const body = [];
+      i += 1;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) { body.push(lines[i]); i += 1; }
+      i += 1;
+      const pre = make("pre", "md-code");
+      pre.append(document.createTextNode(body.join("\n")));
+      parent.append(pre);
+      continue;
+    }
+
+    if (mdIsTableStart(lines, i)) {
+      const header = mdRowCells(lines[i]);
+      const alignment = mdAlignment(lines[i + 1]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
+        rows.push(mdRowCells(lines[i]));
+        i += 1;
+      }
+      /* unaligned columns of numbers read better right-aligned */
+      const plain = (cell) => String(cell ?? "").replace(/[*`]/g, "");
+      const inferred = header.map((_, index) => (
+        rows.length && rows.every((row) => MD_NUMBER.test(plain(row[index]))) ? "right" : "left"
+      ));
+      parent.append(mdTable(header, alignment.map((a, index) => a || inferred[index]), rows));
+      continue;
+    }
+
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      /* shift one level down: the panel already has an <h2> title */
+      const tag = `h${Math.min(heading[1].length + 1, 6)}`;
+      const node = make(tag, "md-heading");
+      node.append(...mdInline(heading[2]));
+      parent.append(node);
+      i += 1;
+      continue;
+    }
+
+    if (MD_RULE.test(line)) {
+      parent.append(make("hr", "md-rule"));
+      i += 1;
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      const body = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) {
+        body.push(lines[i].replace(/^\s*>\s?/, ""));
+        i += 1;
+      }
+      const quote = make("blockquote", "md-quote");
+      mdAppendBlocks(quote, body);
+      parent.append(quote);
+      continue;
+    }
+
+    if (MD_LIST_ITEM.test(line)) {
+      const ordered = /^\s*\d+\.\s+/.test(line);
+      const list = make(ordered ? "ol" : "ul", "md-list");
+      while (i < lines.length && MD_LIST_ITEM.test(lines[i])
+             && /^\s*\d+\.\s+/.test(lines[i]) === ordered) {
+        const item = make("li");
+        item.append(...mdInline(lines[i].replace(MD_LIST_ITEM, "")));
+        list.append(item);
+        i += 1;
+      }
+      parent.append(list);
+      continue;
+    }
+
+    const body = [line.trim()];
+    i += 1;
+    while (i < lines.length && lines[i].trim() && !mdStartsBlock(lines, i)) {
+      body.push(lines[i].trim());
+      i += 1;
+    }
+    const para = make("p", "md-paragraph");
+    para.append(...mdInline(body.join(" ")));
+    parent.append(para);
+  }
+}
+
+function mdToFragment(markdown) {
+  const fragment = document.createDocumentFragment();
+  mdAppendBlocks(fragment, String(markdown).replace(/\r\n?/g, "\n").split("\n"));
+  return fragment;
+}
+
+/* ------------------------------------------------------------------ */
 /* metrics tab                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -1065,8 +1268,11 @@ function renderMetrics() {
   if (metrics.table_md) {
     any = true;
     body.append(make("h2", null, "table.md"));
-    const pre = make("pre", "table-md", metrics.table_md);
-    body.append(pre);
+    body.append(mdToFragment(metrics.table_md));
+    const raw = make("details", "md-raw");
+    raw.append(make("summary", "muted small", "Raw markdown"));
+    raw.append(make("pre", "table-md", metrics.table_md));
+    body.append(raw);
   }
 
   if (Array.isArray(metrics.metrics_csv) && metrics.metrics_csv.length) {
