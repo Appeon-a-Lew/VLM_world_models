@@ -13,8 +13,8 @@ Can a VLM predict **where objects end up** after a push, as grounded 3D coordina
 ## Start Simple (Recommended Workflow)
 1. **Generate a small deterministic dataset** (`configs/sim_simple.yaml`: 1 box, fixed density & friction, zero direction jitter):
    ```bash
-   python -m physwm.sim.generate --config configs/sim_simple.yaml --split train --seeds 0 1000 --out $WM/data_simple
-   python -m physwm.sim.generate --config configs/sim_simple.yaml --split val_id --seeds 1000000 100200 --out $WM/data_simple
+   python -m physwm.sim.generate --config configs/sim_simple.yaml --split train --seed-start 0 --n 1000 --out $WM/data_simple
+   python -m physwm.sim.generate --config configs/sim_simple.yaml --split val_id --seed-start 1000000 --n 200 --out $WM/data_simple
    ```
 2. **Train SFT** (with or without `--no-pe` for the depth-based xyz position embedding):
    ```bash
