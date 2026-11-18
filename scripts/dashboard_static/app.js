@@ -133,6 +133,7 @@ const state = {
   show: { gt: true, labels: true, preds: true, errors: true, seg: false },
   tasks: { A: true, B: true, N: true },
   metrics: null,
+  phase1: undefined,
   navSeq: 0,
   loadToken: 0,
 };
@@ -1173,10 +1174,13 @@ function mdAppendBlocks(parent, lines) {
         rows.push(mdRowCells(lines[i]));
         i += 1;
       }
-      /* unaligned columns of numbers read better right-aligned */
-      const plain = (cell) => String(cell ?? "").replace(/[*`]/g, "");
+      /* unaligned columns of numbers read better right-aligned; dashes and
+       * empty cells ("–", "-", "") count as numeric placeholders */
+      const plain = (cell) => String(cell ?? "").replace(/[*`]/g, "").trim();
+      const numericCell = (cell) => plain(cell) === "" || /^[−\-–—]$/.test(plain(cell))
+        || MD_NUMBER.test(plain(cell));
       const inferred = header.map((_, index) => (
-        rows.length && rows.every((row) => MD_NUMBER.test(plain(row[index]))) ? "right" : "left"
+        rows.length && rows.every((row) => numericCell(row[index])) ? "right" : "left"
       ));
       parent.append(mdTable(header, alignment.map((a, index) => a || inferred[index]), rows));
       continue;
@@ -1247,11 +1251,24 @@ function mdToFragment(markdown) {
 /* metrics tab                                                         */
 /* ------------------------------------------------------------------ */
 
+/* phase1.md is optional documentation next to the bundle; a missing file is
+ * not an error (older exports did not ship it). */
+async function loadPhase1() {
+  if (state.phase1 !== undefined) return state.phase1;
+  state.phase1 = null;
+  try {
+    const response = await fetch("phase1.md", { cache: "no-store" });
+    if (response.ok) state.phase1 = await response.text();
+  } catch (_) { /* optional document */ }
+  return state.phase1;
+}
+
 async function loadMetrics() {
   if (state.metrics) { renderMetrics(); return; }
   els.metricsBody.replaceChildren(make("p", "muted", "Loading metrics…"));
   try {
     state.metrics = await fetchJSON("metrics");
+    await loadPhase1();
     renderMetrics();
   } catch (error) {
     els.metricsBody.replaceChildren(make("div", "metrics-empty", `Could not load metrics: ${error.message}`));
@@ -1297,6 +1314,11 @@ function renderMetrics() {
     table.append(tbody);
     wrap.append(table);
     body.append(wrap);
+  }
+
+  if (state.phase1 && state.phase1.trim()) {
+    any = true;
+    body.append(mdToFragment(state.phase1));
   }
 
   if (!any) {
