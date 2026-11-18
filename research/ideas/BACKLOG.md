@@ -4,35 +4,85 @@ Status: `proposed` → `planned: exp###` → `done: exp###` (or `rejected: reaso
 `needs-human: reason`). The planner re-ranks this file; the researcher and reviewer append.
 Phase-1 backlog (IDEA-001…062): `research/ideas/BACKLOG_phase1_archive.md`.
 
-## Ranking (planner re-seed, 2026-11-14; after RESULTS_phase2 §1–§6)
+## Ranking (planner re-seed, 2026-11-18; after IDEA-103 closed and RESULTS_phase2 §1–§6)
 
-Inputs: `research/RESULTS_phase2.md`, `research/PLAN.md` (incl. reading rules), the open
-questions in `research/STATE.md`, phase-1 archive. NG = no GPU, G = GPU.
-Grounding observation that orders this list: box3d without PE is the best grounding *and*
-best dynamics arm (A val_id 0.0127, B val_id 0.1423) while PE-on costs 8.7 cm on A (§1) and
-0.2146 vs 0.1423 on B (§2); with PE off the privileged transfer read-out is ~0 (§3), so
-dynamics is the bottleneck. Therefore the PE mechanism is the highest-value question, and the no-GPU probe
-that can run while the GPU is busy is ranked alongside the first training arm.
+Inputs: `research/RESULTS_phase2.md` (§1 grounding, §2 endpoint, §3 motion attribution, §5
+hygiene, §6 order), `research/experiments/idea103_surface_probe/report.md`,
+`research/literature/2026_onecanvas.md`, `research/PLAN.md` incl. reading rules, the open
+questions in `research/STATE.md`. NG = no GPU, G = GPU. Primary metric =
+`val_ood_target_mean` (Task B target, mean over the val OOD splits).
+Ordering observation: 103 moved the PE question from "surface copy" to "per-episode range
+scale" (`s_ep` 1.043 ± 0.110 vs 0.998 ± 0.015), so the fix arms now test *magnitude/scale
+control*, not geometry. One sequencing fact changes the plan: policy v2.0 loads
+`val_ood_config_nocam` in **every** job, so 104's generation step is a precondition for
+101/102/105, not just an idea — and no arm can be submitted until that split exists on the
+chosen backend.
 
-1. **IDEA-103** DONE 2026-11-14: not supported (per-episode radial scale distortion);
-   successor metric IDEA-109; fix arms remain 101/102, now aimed at scale calibration.
-2. **IDEA-101** PE norm-pinned training arm (G, one train arm). The direct test of the
-   feature-takeover mechanism and the stage-1 recipe we omitted.
-3. **IDEA-102** PE lr sweep, 50× → 5× (G, 1–2 train arms). Config-only alternative to 101;
-   falsifies or supports the "PE branch moves too fast" reading.
-4. **IDEA-104** `val_ood_config_nocam` generation + eval-only rescoring (G, generation ~30 min
-   plus one inference pass per adapter). Required before any phase-2 configuration claim.
-5. **IDEA-105** Seed pairs for the 2×2 (G, 2–4 train arms). Calibrates whether 101/102 gains
-   are above the seed floor; shares the 104 rescoring pass.
-6. **IDEA-106** Forecast-horizon read-out from s_f3 (NG once the queued arms land). Decide if
-   3-frame input is forecasting or reconstruction.
-7. **IDEA-107** n_views = 2 arm (G, corpus regeneration at 2 views + one train arm). First
-   step of the views axis; expensive because v3 is a 1-view corpus.
-8. **IDEA-108** Estimated metric depth at inference (G, eval-only per arm). Depth-source axis
-   and the gate before any RGB-only claim.
+1. **IDEA-101 — planned: exp011_pe_norm_pinned** (G, 1 train arm, 3 GPU-h budget).
+   *For:* 103's scale error is 96 % of the PE-on L2 variance with `s_ep` = 1.043 ± 0.110, and the
+   one recipe we omitted is exactly the magnitude calibration (`2026_onecanvas.md`, stage-1 norm
+   pin). *Against:* OneCanvas pins the PE in a synthetic curriculum at r=256/8B; our 2-epoch,
+   r=16, single-view regime may not reach the regime the pin protects, and the gate can still
+   re-amplify a bounded delta. *Effect on primary:* −0.01 to −0.025 if the perception share
+   (0.0457 m of B val_id, §3) returns and the PE keeps its legacy config edge (0.2495 vs nope
+   0.2672); 0 if null; the 3-split mean ceiling is 0.3216 → 0.2985. *Risk:* no protected change,
+   but a gate-stuck-at-0 no-op would make a null uninformative → the spec pre-registers a
+   `[penorm]` bind check. *Info:* decisive both ways — success sends us to 104/105, null sends us
+   to 102 and then 107/108; it also answers "does the PE carry usable in-distribution signal".
+2. **IDEA-102** PE lr 50× → 5× (G, 1–2 config-only train arms, 3–6 GPU-h). *For:* cheapest
+   possible train-side probe (no code change), and the only arm that separates "branch moves too
+   fast" from "branch is the wrong input"; §1's harm happens at 50× lr where the branch reaches a
+   large-norm regime first. *Against:* competes with 101 for the same GPU slot and does not test
+   the recipe we actually omitted; a monotone-looking curve may need a third arm; 5× may simply
+   undertrain in 2 epochs. *Effect on primary:* −0.01…−0.02 only if LR is the whole story; likely
+   intermediate. *Risk:* one seed, and lr changes are easy to over-read as a mechanism; no
+   protected change. *Info:* high *conditional on 101 being null* — as a first arm it leaves the
+   magnitude question open.
+3. **IDEA-104** `val_ood_config_nocam` generation + eval-only rescoring (G, ~0.5 h generation +
+   ~6 adapters × ~0.3 h ≈ 2.5–3 GPU-h). *For:* every config claim since phase 1 is on a
+   camera-confounded legacy split (§5, PLAN rule 6); 103 §4 shows the config column can invert
+   the PE story (PE-off radial +0.103 > PE-on), so 101's config read-out is uninterpretable
+   without it; the generation half is a hard precondition for all queued arms. *Against:* no
+   mechanism by itself; the rescoring pass is only useful once the PE-fix arm exists. *Effect on
+   primary:* none directly, but it can move the primary's split set and therefore its value —
+   the reason 101's criterion is pre-registered as a paired difference vs s_f1. *Risk:* none to
+   protected splits (val_* only, committed config, reserved seeds); risk is forgetting provenance.
+   *Info:* highest of any non-training item; unblocks 101/102/105 and settles the phase-2 config
+   question.
+4. **IDEA-105** Seed-1 pairs for l_f1 / s_f1_nope + seed-2 for the 2×2 winners (G, 3–4 arms,
+   ~9–12 GPU-h). *For:* the only floor we have is one repeat of s_f1 (≤0.004 m); any PE-fix gain
+   below ~0.008 m cannot be reported without it, and a centre-format floor may be larger.
+   *Against:* pure cost, no mechanism; premature until the 101/102 winner is known, and it would
+   consume most of a day's 12 GPU-h budget. *Effect on primary:* none; it decides whether 101/102
+   effects are real. *Risk:* turns a 0.005 "comparable" into a claim if run carelessly; no
+   protected change. *Info:* gates adoption only — it changes what we *report*, not what we try.
+5. **IDEA-106** Forecast-horizon read-out from s_f3 / s_f3_nope (NG). *For:* free once the
+   3-frame matrix arms land, and it is the only test of whether the 3-frame input forecasts or
+   reconstructs (PLAN rule 5); §3's N 0.0268 vs hold-Â 0.0763 shows there is motion signal to
+   lose at 0.3 s. *Against:* does not bear on the primary metric or the PE question, and it is
+   blocked on s_f3 landing. *Effect on primary:* none. *Risk:* scoring an observed frame would
+   measure reconstruction — the spec/read-out must use the first unobserved frame. *Info:*
+   moderate; it decides the frame-axis story, not the next training arm.
+6. **IDEA-107** n_views = 2 (G, corpus regeneration + 1 arm, ≫10 GPU-h). *For:* triangulation is
+   the principled answer to a depth/range ambiguity and would also test whether 103's scale error
+   is single-view unidentifiability. *Against:* v3 is a 1-view corpus, so it needs a regeneration
+   and a new output root; policy prefers the simpler arm when comparable. *Effect on primary:*
+   potentially large on objects/config, unknown on forces. *Risk:* corpus/provenance work, cost.
+   *Info:* high but not cheap; correctly last.
+7. **IDEA-108** Estimated metric depth at inference (G, eval-only per arm, ~0.5 GPU-h). *For:*
+   the honesty gate for every RGB-only claim and the depth-source axis of PLAN decision 5;
+   OneCanvas's own GT→DA3 drop is only 0.4–1.3 points, so it is not expected to be an artefact.
+   *Against:* cannot be interpreted before 101 says whether the PE uses depth at all.
+   *Effect on primary:* small negative to flat. *Risk:* check the estimator loads with the
+   current transformers before planning; no new dependency. *Info:* medium; it constrains claims.
+8. **IDEA-109** `s_ep` as a standing per-arm read-out (NG). *For:* 103 shows `s_ep` separates a
+   scale fix from generic error reduction, and `analyze_pe_surface.py` already emits it.
+   *Against:* nothing, it is free. *Effect:* none on the metric. *Info:* makes 101/102
+   interpretable; has no version of its own (it is a required read-out in exp011's spec and should
+   be quoted in every later report).
 
-Not ranked: anything that needs a pinned eval/agent change, a new dependency, a final-test
-run or a v3 manifest is `needs-human` by construction.
+Not ranked: anything needing a pinned eval/agent change, a new dependency, a final-test run or a
+v3 manifest is `needs-human` by construction. IDEA-103 is closed (done, not supported).
 
 ---
 
@@ -43,9 +93,10 @@ run or a v3 manifest is `needs-human` by construction.
 - hypothesis: the PE harm is feature takeover, not bad geometry. The 136-channel xyz PE, added
   at 50× LR through a zero-init gate, grows until the branch dominates the frozen ViT features,
   so the model reads out coordinates instead of inferring body centres. Pinning the PE vector's
-  norm to half the mean visual-feature norm (per forward pass, before the MLP/gate) keeps the
-  signal bounded and should restore Task A toward the no-PE level while keeping whatever OOD
-  benefit the PE carries on the config axis.
+  norm to half the mean visual-feature norm (per forward pass, in feature space between the MLP
+  and the gate: the reference norm is `hidden`-dimensional, so a pin in the 136-ch code would not
+  be comparable) keeps the signal bounded and should restore Task A toward the no-PE level while
+  keeping whatever OOD benefit the PE carries on the config axis.
 - cheapest test: one train arm identical to `s_f1` in data, seed, LoRA, schedule and answer
   format; the only change is the norm pin (gate stays zero-init). Infer A/B/N on the validation
   splits and score with the existing paired read-outs.
@@ -55,7 +106,14 @@ run or a v3 manifest is `needs-human` by construction.
   reference. If neither moves, takeover is not the mechanism (route to 102 / 103).
 - GPU cost: one training arm plus val inference (same recipe as `s_f1`); set `budget_hours`
   from the recorded `s_f1` wall time. Fits 8 h on LRZ.
-- status: proposed
+- status: **planned: exp011_pe_norm_pinned** (2026-11-18). Spec pins *each* merged token's PE
+  vector norm to 0.5 × the mean visual-feature norm per forward pass, in feature space after the
+  MLP and before the zero-init gate (a 136-ch-space pin would not be dimensionally comparable);
+  gate init, PE lr 50×, LoRA, corpus, seed, style, frames, views and tasks unchanged vs `s_f1`.
+  Pre-registered decision variable is Task A val_id (A ≤ 0.031 = ≥ 80 % of the 8.7 cm gap
+  closed) with a B val_id guard (≤ 0.2196), plus the IDEA-109 `s_ep` read-out and a
+  "did the pin bind" check (final |gate| and the realized added-vector share vs `s_f1`).
+  Submission is blocked until `val_ood_config_nocam` exists on the chosen backend (policy v2.0).
 
 ## IDEA-102 PE lr sweep arms (50× → 5×)
 
