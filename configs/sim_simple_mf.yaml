@@ -1,0 +1,15 @@
+# Deterministic multi-frame Stage-1 config (Option 2): 1 box, smooth tabletop friction (0.16)
+# so boxes keep gliding well past t = 0.2 s under 10 Hz observation frames [0.0, 0.1, 0.2].
+base: sim_simple.yaml
+name: simple_mf
+
+objects:
+  friction: [0.16, 0.16]
+
+push:
+  speed: [0.45, 0.95]
+
+sim:
+  store_times: [0.0, 0.1, 0.2, 1.0]
+  frame_times: [0.0, 0.1, 0.2, 1.0]
+  n_views: 1

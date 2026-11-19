@@ -26,7 +26,7 @@ from tqdm import tqdm
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
 from physwm.schema import Episode, load_split
-from physwm.vlm.parse import parse_answer, parse_box3d
+from physwm.vlm.parse import parse_answer, parse_box3d, parse_chain3d
 from physwm.vlm.pe import frame_token_xyz, image_grid_rows, install_pe, load_pe
 from physwm.vlm.prompts import build_messages, input_images, prompt_text, swap_partners
 
@@ -93,6 +93,8 @@ def parse_indices(value, default=(0,)) -> list[int]:
 
 
 def token_budget(style: str, n_objects: int) -> int:
+    if style == "chain3d":
+        return 96 + 128 * n_objects
     if style == "box3d":
         return 64 + 64 * n_objects
     if style == "qwen3d":
@@ -122,11 +124,12 @@ def main():
     ap.add_argument("--tasks", nargs="+", default=["A", "B"])
     ap.add_argument("--model", default="Qwen/Qwen3-VL-2B-Instruct")
     ap.add_argument("--lora", default=None)
-    ap.add_argument("--style", default="center", choices=["center", "qwen3d", "box3d"])
+    ap.add_argument("--style", default="center", choices=["center", "qwen3d", "box3d", "chain3d"])
     ap.add_argument("--image-mode", default="normal", choices=["normal", "none", "blank", "swap"])
     ap.add_argument("--frames", default=None, help="comma list of frame indices, e.g. 0,1,2")
     ap.add_argument("--views", default=None, help="comma list of view indices, e.g. 0")
     ap.add_argument("--no-pe", action="store_true", help="ignore pe.pt next to the adapter (B5)")
+    ap.add_argument("--no-action", action="store_true", help="omit action text from prompt (infer from frames)")
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--limit", type=int, default=None, help="episodes per split")
     ap.add_argument("--out", required=True)
@@ -134,6 +137,7 @@ def main():
 
     frames, views = parse_indices(args.frames), parse_indices(args.views)
     pairs = [(fr, vw) for fr in frames for vw in views]
+    include_action = not args.no_action
     model, processor = load_model(args.model, args.lora)
     merge = int(processor.image_processor.merge_size)
     pe = load_pe_for(model, args.lora, enabled=not args.no_pe)
@@ -153,7 +157,9 @@ def main():
                 for d, ep, task in chunk:
                     partner = partners.get(ep.episode_id)
                     images = input_images(d, ep, frames, views, args.image_mode, partner)
-                    msgs.append(build_messages(prompt_text(ep, task, args.style, frames), images))
+                    msgs.append(build_messages(
+                        prompt_text(ep, task, args.style, frames, include_action=include_action), images
+                    ))
                     if use_pe:
                         d_depth, ep_depth = partner if partner is not None else (d, ep)
                         grids = image_grid_rows(processor, images, grid_cache)
@@ -167,7 +173,10 @@ def main():
                 max_new = token_budget(args.style, max(len(ep.objects) for _, ep, _ in chunk))
                 answers = generate(model, processor, msgs, max_new)
                 for (d, ep, task), ans in zip(chunk, answers):
-                    if args.style == "box3d":
+                    cur_objects, cur_extents = None, None
+                    if args.style == "chain3d":
+                        cur_objects, cur_extents, objects, extents, _pc, parsed = parse_chain3d(ans, ep)
+                    elif args.style == "box3d":
                         objects, extents, parsed = parse_box3d(ans, ep)
                     else:
                         objects, parsed = parse_answer(ans, ep)
@@ -176,6 +185,9 @@ def main():
                         ep, task, objects, extents, parsed, ans, frames,
                         image_mode=args.image_mode, style=args.style, lora=args.lora,
                     )
+                    if cur_objects is not None:
+                        rec["current_objects"] = cur_objects
+                        rec["current_extents"] = cur_extents
                     f.write(json.dumps(rec) + "\n")
                 n_done += len(chunk)
     print(f"wrote {out_path} ({n_done} samples, {time.time() - t_start:.0f}s)")

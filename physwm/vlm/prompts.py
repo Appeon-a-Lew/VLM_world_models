@@ -43,12 +43,15 @@ def _intrinsics(ep: Episode) -> str:
     )
 
 
-def _input_times(ep: Episode, frames: tuple[int, ...]) -> str:
+def _input_times(ep: Episode, frames: tuple[int, ...], include_action: bool = True) -> str:
     times = ", ".join(f"{float(ep.frame_times[f]):.1f}" for f in frames)
-    return f"The images show t = {times} seconds after the action."
+    if include_action:
+        return f"The images show t = {times} seconds after the action."
+    return f"The images show the scene at t = {times} seconds."
 
 
-def _ask(ep: Episode, task: str, what: str, frames: tuple[int, ...] = (0,)) -> str:
+def _ask(ep: Episode, task: str, what: str, frames: tuple[int, ...] = (0,),
+         include_action: bool = True) -> str:
     """Question sentence for one task; ``frames`` are the input frame indices."""
     frames = tuple(frames) if frames else (0,)
     if task == "A":
@@ -58,26 +61,52 @@ def _ask(ep: Episode, task: str, what: str, frames: tuple[int, ...] = (0,)) -> s
                     f"(t = {t0:.1f} s).")
         return f"Report the {what} of each listed object as it is in the image."
     if task == "B":
+        if not include_action:
+            return (
+                f"Observe the motion across the frames and predict the {what} of each listed "
+                f"object at t = {TASK_TIME['B']:.1f} seconds."
+            )
         return (
             f"Action: {ep.action.text}\n"
             f"Predict the {what} of each listed object {TASK_TIME['B']:.1f} second after the action."
         )
     if task == NEXT_FRAME_TASK:
+        tn = task_time(ep, task, frames)
+        if not include_action:
+            return (
+                f"Observe the motion across the frames and predict the {what} of each listed "
+                f"object at the next stored frame (t = {tn:.1f} seconds)."
+            )
         return (
             f"Action: {ep.action.text}\n"
             f"Predict the {what} of each listed object at the next stored frame after the last "
-            f"input image ({task_time(ep, task, frames):.1f} second after the action)."
+            f"input image ({tn:.1f} second after the action)."
         )
     raise ValueError(f"unknown task {task!r}")
 
 
 def prompt_text(ep: Episode, task: str, style: str = "center",
-                frames: tuple[int, ...] = (0,)) -> str:
+                frames: tuple[int, ...] = (0,), include_action: bool = True) -> str:
     """Prompt for one (episode, task); with several input frames it also states their times."""
     frames = tuple(frames) if frames else (0,)
     names = ", ".join(o.name for o in ep.objects)
-    if style == "box3d":
-        ask = _ask(ep, task, "3D bounding box", frames)
+    if style == "chain3d":
+        t_cur = float(ep.frame_times[frames[-1]])
+        t_fut = task_time(ep, task, frames)
+        prefix = f"Action: {ep.action.text}\n" if include_action and task != "A" else ""
+        ask = (
+            f"{prefix}First report the 3D bounding box of each listed object at the last observed "
+            f"image (t = {t_cur:.1f} s), then predict its 3D bounding box at t = {t_fut:.1f} s."
+        )
+        fmt = (
+            'Answer only with a JSON object: '
+            '{"current": [{"label": "<object>", "center": [x, y, z], "extents": [ex, ey, ez]}, ...], '
+            '"future": [{"label": "<object>", "center": [x, y, z], "extents": [ex, ey, ez]}, ...]}. '
+            "center is the object centre in metres and extents are the full body-axis sizes "
+            "(ex, ey, ez) in metres."
+        )
+    elif style == "box3d":
+        ask = _ask(ep, task, "3D bounding box", frames, include_action=include_action)
         fmt = (
             'Answer only with a JSON list, one entry per listed object: '
             '[{"label": "<object>", "center": [x, y, z], "extents": [ex, ey, ez]}, ...]. '
@@ -85,7 +114,7 @@ def prompt_text(ep: Episode, task: str, style: str = "center",
             "(ex, ey, ez) in metres."
         )
     else:
-        ask = _ask(ep, task, "3D centre", frames)
+        ask = _ask(ep, task, "3D centre", frames, include_action=include_action)
         if style == "center":
             fmt = 'Answer only with JSON: [{"label": "<object>", "center": [x, y, z]}, ...]'
         elif style == "qwen3d":
@@ -96,7 +125,7 @@ def prompt_text(ep: Episode, task: str, style: str = "center",
             )
         else:
             raise ValueError(style)
-    times = f"{_input_times(ep, frames)}\n" if len(frames) > 1 else ""
+    times = f"{_input_times(ep, frames, include_action=include_action)}\n" if len(frames) > 1 else ""
     return (
         f"A camera looks at objects on a table. {_intrinsics(ep)} {FRAME}\n"
         f"Objects: {names}.\n{times}{ask}\n{fmt}"
@@ -105,12 +134,26 @@ def prompt_text(ep: Episode, task: str, style: str = "center",
 
 def target_text(ep: Episode, task: str, style: str = "center",
                 frames: tuple[int, ...] = (0,)) -> str:
-    """Ground-truth answer string; "box3d" adds full body-axis extents to the centres.
+    """Ground-truth answer string; "box3d" adds full body-axis extents to the centres,
+    "chain3d" outputs {"current": [...at last input frame...], "future": [...at task_time...]}.
 
-    ``frames`` select the task-N target time (first stored frame after the last input frame).
+    ``frames`` select the last input frame and task-N target time.
     """
-    t = task_time(ep, task, tuple(frames) if frames else (0,))
+    frames = tuple(frames) if frames else (0,)
+    t = task_time(ep, task, frames)
     c = gt_centers_cam(ep, t)
+    if style == "chain3d":
+        t_cur = float(ep.frame_times[frames[-1]])
+        c_cur = gt_centers_cam(ep, t_cur)
+        e = gt_extents(ep)
+        def _box_list(centers):
+            return [
+                {"label": o.name,
+                 "center": [round(float(v), 3) for v in centers[i]],
+                 "extents": [round(float(v), 3) for v in e[i]]}
+                for i, o in enumerate(ep.objects)
+            ]
+        return json.dumps({"current": _box_list(c_cur), "future": _box_list(c)})
     if style == "box3d":
         e = gt_extents(ep)
         return json.dumps([
@@ -120,7 +163,7 @@ def target_text(ep: Episode, task: str, style: str = "center",
             for i, o in enumerate(ep.objects)
         ])
     if style != "center":
-        raise ValueError(f"target style {style!r} is not stored as text; use 'center' or 'box3d'")
+        raise ValueError(f"target style {style!r} is not stored as text; use 'center', 'box3d', or 'chain3d'")
     return json.dumps([
         {"label": o.name, "center": [round(float(v), 3) for v in c[o.id]]} for o in ep.objects
     ])

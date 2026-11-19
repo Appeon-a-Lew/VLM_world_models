@@ -145,3 +145,57 @@ def parse_box3d(text: str, ep: Episode) -> tuple[dict[str, list[float] | None],
         if ext is not None and extents[str(oid)] is None:
             extents[str(oid)] = ext
     return centres, extents, any(v is not None for v in centres.values())
+
+
+def _match_entries(entries, ep: Episode):
+    by_name = {_norm(o.name): o.id for o in ep.objects}
+    centres: dict[str, list[float] | None] = {str(o.id): None for o in ep.objects}
+    extents: dict[str, list[float] | None] = {str(o.id): None for o in ep.objects}
+    for label, centre, ext in entries:
+        oid = by_name.get(_norm(label))
+        if oid is None:
+            continue
+        if centre is not None and centres[str(oid)] is None:
+            centres[str(oid)] = centre
+        if ext is not None and extents[str(oid)] is None:
+            extents[str(oid)] = ext
+    return centres, extents, any(v is not None for v in centres.values())
+
+
+def parse_chain3d(text: str, ep: Episode):
+    """Parse ``{"current": [...], "future": [...]}`` Stage-1 chained 3D box predictions.
+
+    Returns ``(cur_centres, cur_extents, fut_centres, fut_extents, parsed_cur, parsed_fut)``.
+    """
+    cleaned = re.sub(r"```(?:json)?", "", text)
+    lo, hi = cleaned.find("{"), cleaned.rfind("}")
+    if lo != -1 and hi > lo:
+        try:
+            data = json.loads(cleaned[lo:hi + 1])
+            if isinstance(data, dict) and ("current" in data or "future" in data):
+                def _from_list(items):
+                    if not isinstance(items, list):
+                        return []
+                    out = []
+                    for e in items:
+                        if not isinstance(e, dict) or "label" not in e:
+                            continue
+                        out.append((
+                            str(e["label"]),
+                            _finite3(e.get("center", e.get("bbox_3d")) or []),
+                            _finite3(e.get("extents") or []),
+                        ))
+                    return out
+                c_c, c_e, c_ok = _match_entries(_from_list(data.get("current")), ep)
+                f_c, f_e, f_ok = _match_entries(_from_list(data.get("future")), ep)
+                return c_c, c_e, f_c, f_e, c_ok, f_ok
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+    # Fallback: split on "current" / "future" keys if output was truncated
+    m_cur = re.search(r'"current"\s*:', cleaned)
+    m_fut = re.search(r'"future"\s*:', cleaned)
+    cur_txt = cleaned[m_cur.end():m_fut.start() if m_fut else len(cleaned)] if m_cur else ""
+    fut_txt = cleaned[m_fut.end():] if m_fut else ""
+    c_c, c_e, c_ok = _match_entries(_box_entries(cur_txt), ep) if cur_txt else _match_entries([], ep)
+    f_c, f_e, f_ok = _match_entries(_box_entries(fut_txt), ep) if fut_txt else _match_entries([], ep)
+    return c_c, c_e, f_c, f_e, c_ok, f_ok

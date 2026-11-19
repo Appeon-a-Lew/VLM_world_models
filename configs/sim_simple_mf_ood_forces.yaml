@@ -1,0 +1,6 @@
+# 1-box OOD forces split matching sim_simple_mf.yaml (both weaker and stronger pushes).
+base: sim_simple_mf.yaml
+name: simple_mf_ood_forces
+
+push:
+  speed_choices: [[0.20, 0.40], [1.05, 1.30]]

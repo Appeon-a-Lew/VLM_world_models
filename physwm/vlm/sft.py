@@ -51,11 +51,12 @@ def parse_indices(value, default):
 
 class SFTData(Dataset):
     def __init__(self, items, tasks, frames=(0,), views=(0,), style: str = "center",
-                 processor=None):
+                 processor=None, include_action: bool = True):
         self.frames = list(frames)
         self.views = list(views)
         self.pairs = [(f, v) for f in self.frames for v in self.views]
         self.style = style
+        self.include_action = include_action
         self.processor = processor
         self.merge = int(processor.image_processor.merge_size) if processor is not None else 2
         self._grid_cache: dict = {}
@@ -86,7 +87,8 @@ class SFTData(Dataset):
         xyz = torch.cat(per_image) if per_image else torch.zeros(0, 3)
         return {
             "messages": build_messages(
-                prompt_text(ep, task, self.style, self.frames), images,
+                prompt_text(ep, task, self.style, self.frames, include_action=self.include_action),
+                images,
                 target_text(ep, task, self.style, self.frames),
             ),
             "xyz": xyz,
@@ -145,8 +147,9 @@ def main():
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--frames", default=None, help="comma list of frame indices, e.g. 0,1,2")
     ap.add_argument("--views", default=None, help="comma list of view indices, e.g. 0")
-    ap.add_argument("--style", default=None, choices=["center", "box3d"])
+    ap.add_argument("--style", default=None, choices=["center", "box3d", "chain3d"])
     ap.add_argument("--no-pe", action="store_true", help="train without the xyz PE (B5 ablation)")
+    ap.add_argument("--no-action", action="store_true", help="omit action text from prompt (infer from frames)")
     ap.add_argument("--data", default=None, help="override the data root from the config")
     ap.add_argument("--tasks", default=None, help="comma list of tasks, e.g. A,B,N")
     ap.add_argument("--num-workers", type=int, default=None, help="override config num_workers")
@@ -168,7 +171,8 @@ def main():
     views = parse_indices(args.views if args.views is not None else cfg.get("views"), [0])
     style = args.style or cfg.get("style", "center")
     use_pe = not args.no_pe
-    cfg.update(frames=frames, views=views, style=style, pe=use_pe)
+    include_action = False if args.no_action else bool(cfg.get("include_action", True))
+    cfg.update(frames=frames, views=views, style=style, pe=use_pe, include_action=include_action)
     out = Path(cfg["out"])
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(cfg, indent=1))
@@ -202,7 +206,7 @@ def main():
         print(f"xyz PE: hidden={pe.hidden}, lr={cfg['lr'] * PE_LR_SCALE:.1e} (50x base)")
 
     items = load_split(cfg["data"], cfg["train_split"])[: args.limit]
-    ds = SFTData(items, cfg["tasks"], frames, views, style, processor)
+    ds = SFTData(items, cfg["tasks"], frames, views, style, processor, include_action=include_action)
     if not len(ds):
         raise ValueError("training dataset is empty")
     collate = Collator(processor)
