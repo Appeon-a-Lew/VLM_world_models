@@ -199,3 +199,105 @@ def parse_chain3d(text: str, ep: Episode):
     c_c, c_e, c_ok = _match_entries(_box_entries(cur_txt), ep) if cur_txt else _match_entries([], ep)
     f_c, f_e, f_ok = _match_entries(_box_entries(fut_txt), ep) if fut_txt else _match_entries([], ep)
     return c_c, c_e, f_c, f_e, c_ok, f_ok
+
+
+def parse_ctx3d(text: str, ep: Episode):
+    """Parse a ctx3d answer: current boxes, future boxes, the emitted action context and
+    the emitted per-object support.
+
+    Returns ``(cur_centres, cur_extents, fut_centres, fut_extents, ctx, support, parsed_cur,
+    parsed_fut)``; ``ctx`` / ``support`` are raw dicts or ``None`` when absent or malformed
+    (the current/future parsing matches :func:`parse_chain3d`; the extra keys are ignored
+    there and scored here instead).
+    """
+    cleaned = re.sub(r"```(?:json)?", "", text)
+    ctx = None
+    m = re.search(r'"action_context"\s*:\s*\{', cleaned)
+    if m:
+        depth, start = 0, m.end() - 1
+        for k in range(start, len(cleaned)):
+            if cleaned[k] == "{":
+                depth += 1
+            elif cleaned[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        ctx = json.loads(cleaned[start:k + 1])
+                    except (json.JSONDecodeError, ValueError):
+                        ctx = None
+                    break
+    support = _support_entries(cleaned, ep)
+    c_c, c_e, f_c, f_e, c_ok, f_ok = parse_chain3d(text, ep)
+    return c_c, c_e, f_c, f_e, ctx, support, c_ok, f_ok
+
+
+def _support_entries(cleaned: str, ep: Episode) -> dict[str, str] | None:
+    """Per-object ``support`` strings emitted in the "current" list: {str(object id):
+    value}, or None when the answer emits none."""
+    by_name = {_norm(o.name): o.id for o in ep.objects}
+    data = None
+    lo, hi = cleaned.find("{"), cleaned.rfind("}")
+    if lo != -1 and hi > lo:
+        try:
+            loaded = json.loads(cleaned[lo:hi + 1])
+            if isinstance(loaded, dict):
+                data = loaded
+        except (json.JSONDecodeError, ValueError):
+            pass
+    out: dict[str, str] = {}
+    if isinstance(data, dict) and isinstance(data.get("current"), list):
+        for e in data["current"]:
+            if isinstance(e, dict) and isinstance(e.get("support"), str):
+                oid = by_name.get(_norm(str(e.get("label", ""))))
+                if oid is not None and str(oid) not in out:
+                    out[str(oid)] = e["support"].strip().lower()
+        return out or None
+    for m in re.finditer(r'"label"\s*:\s*"([^"]+)"[^{}]*?"support"\s*:\s*"([^"]*)"', cleaned):
+        oid = by_name.get(_norm(m.group(1)))
+        if oid is not None and str(oid) not in out:
+            out[str(oid)] = m.group(2).strip().lower()
+    return out or None
+
+
+# Vocabulary duplicated from physwm.vlm.prompts (kept local so parse stays import-light;
+# tests/test_idp.py asserts the two stay in sync).
+_IDP_DIRECTIONS = ("left", "right", "away", "toward")
+_IDP_STRENGTHS = ("weak", "medium", "strong")
+_NO_MOTION = "no clear motion"
+
+
+def parse_idp(text: str, ep: Episode) -> tuple[dict | None, bool]:
+    """Parse an IDP answer: the target/direction/strength triple, the explicit no-motion
+    class, or nothing usable.
+
+    Returns ``(answer, parsed)``. On a full triple ``answer["target"]`` is the matched
+    object id; the no-motion class returns ``{"action": "no clear motion"}``.
+    """
+    cleaned = re.sub(r"```(?:json)?", "", text)
+    data: dict = {}
+    lo, hi = cleaned.find("{"), cleaned.rfind("}")
+    if lo != -1 and hi > lo:
+        try:
+            loaded = json.loads(cleaned[lo:hi + 1])
+            if isinstance(loaded, dict):
+                data = loaded
+        except (json.JSONDecodeError, ValueError):
+            pass
+    if not data:  # fallback: pull the fields individually out of truncated output
+        m = re.search(r'"action"\s*:\s*"([^"]+)"', cleaned)
+        if m:
+            data = {"action": m.group(1)}
+        for key in ("target", "direction", "strength"):
+            m = re.search(rf'"{key}"\s*:\s*"([^"]+)"', cleaned)
+            if m:
+                data[key] = m.group(1)
+    if str(data.get("action", "")).strip().lower() == _NO_MOTION:
+        return {"action": _NO_MOTION}, True
+    target = data.get("target")
+    by_name = {_norm(o.name): o.id for o in ep.objects}
+    oid = by_name.get(_norm(str(target))) if target is not None else None
+    direction = str(data.get("direction", "")).strip().lower()
+    strength = str(data.get("strength", "")).strip().lower()
+    if oid is None or direction not in _IDP_DIRECTIONS or strength not in _IDP_STRENGTHS:
+        return None, False
+    return {"target": oid, "direction": direction, "strength": strength}, True

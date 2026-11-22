@@ -12,6 +12,12 @@ adapter (loaded automatically, ``--no-pe`` for the B5 ablation). Each generate c
 
 Every record carries ``"frames"`` (the input frame indices) so task N is scored at the first
 stored frame after the last input frame without re-deriving the arm shape from the file name.
+
+M0 options (research/PREREG.md): ``--style ctx3d`` (emit the physical context before the
+future boxes; the emitted ``action_context`` is kept in the record for the predicted-context
+diagnostic), ``--tasks ... I`` (inverse-dynamics answers on the fixed t = 0.1 s input pair,
+parsed into the record's ``"idp"`` field) and ``--oracle-context`` (inject the
+simulator-provided action context into forward-prediction prompts; task A never gets it).
 """
 
 from __future__ import annotations
@@ -25,10 +31,12 @@ import torch
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
+from physwm.eval.metrics import NEXT_FRAME_TASK
 from physwm.schema import Episode, load_split
-from physwm.vlm.parse import parse_answer, parse_box3d, parse_chain3d
+from physwm.vlm.parse import parse_answer, parse_box3d, parse_chain3d, parse_ctx3d, parse_idp
 from physwm.vlm.pe import frame_token_xyz, image_grid_rows, install_pe, load_pe
-from physwm.vlm.prompts import build_messages, input_images, prompt_text, swap_partners
+from physwm.vlm.prompts import (IDP_TASK, IDP_TIME, build_messages, idp_frame, input_images,
+                                prompt_text, swap_partners)
 
 
 def load_model(model_id: str, lora: str | None = None):
@@ -93,6 +101,8 @@ def parse_indices(value, default=(0,)) -> list[int]:
 
 
 def token_budget(style: str, n_objects: int) -> int:
+    if style == "ctx3d":
+        return 192 + 160 * n_objects
     if style == "chain3d":
         return 96 + 128 * n_objects
     if style == "box3d":
@@ -124,12 +134,16 @@ def main():
     ap.add_argument("--tasks", nargs="+", default=["A", "B"])
     ap.add_argument("--model", default="Qwen/Qwen3-VL-2B-Instruct")
     ap.add_argument("--lora", default=None)
-    ap.add_argument("--style", default="center", choices=["center", "qwen3d", "box3d", "chain3d"])
+    ap.add_argument("--style", default="center", choices=["center", "qwen3d", "box3d", "chain3d", "ctx3d"])
     ap.add_argument("--image-mode", default="normal", choices=["normal", "none", "blank", "swap"])
     ap.add_argument("--frames", default=None, help="comma list of frame indices, e.g. 0,1,2")
     ap.add_argument("--views", default=None, help="comma list of view indices, e.g. 0")
     ap.add_argument("--no-pe", action="store_true", help="ignore pe.pt next to the adapter (B5)")
     ap.add_argument("--no-action", action="store_true", help="omit action text from prompt (infer from frames)")
+    ap.add_argument("--oracle-context", action="store_true",
+                    help="inject the simulator-provided action context into forward-prediction prompts")
+    ap.add_argument("--direction-input", choices=("text", "nominal", "recorded"), default="text",
+                    help="add a camera-frame direction vector to the forward-prediction prompt")
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--limit", type=int, default=None, help="episodes per split")
     ap.add_argument("--out", required=True)
@@ -138,6 +152,7 @@ def main():
     frames, views = parse_indices(args.frames), parse_indices(args.views)
     pairs = [(fr, vw) for fr in frames for vw in views]
     include_action = not args.no_action
+    direction_input = args.direction_input if include_action else "text"
     model, processor = load_model(args.model, args.lora)
     merge = int(processor.image_processor.merge_size)
     pe = load_pe_for(model, args.lora, enabled=not args.no_pe)
@@ -150,15 +165,30 @@ def main():
         for split in args.splits:
             items = load_split(args.data, split)[: args.limit]
             partners = swap_partners(items) if args.image_mode == "swap" else {}
-            work = [(d, ep, task) for d, ep in items for task in args.tasks]
+            work = []
+            for d, ep in items:
+                for task in args.tasks:
+                    if task == IDP_TASK:  # legacy episodes lack the fixed 0.1 s pair
+                        try:
+                            idp_frame(ep)
+                            ep.state_at(IDP_TIME)
+                        except (KeyError, ValueError):
+                            continue
+                    work.append((d, ep, task))
             for i in tqdm(range(0, len(work), args.batch_size), desc=split):
                 chunk = work[i:i + args.batch_size]
                 msgs, xyz = [], []
                 for d, ep, task in chunk:
+                    # Task I reads its own fixed frame pair; everything else the arm's frames.
+                    frames_ep = (0, idp_frame(ep)) if task == IDP_TASK else frames
+                    pairs_ep = [(fr, vw) for fr in frames_ep for vw in views]
                     partner = partners.get(ep.episode_id)
-                    images = input_images(d, ep, frames, views, args.image_mode, partner)
+                    images = input_images(d, ep, frames_ep, views, args.image_mode, partner)
                     msgs.append(build_messages(
-                        prompt_text(ep, task, args.style, frames, include_action=include_action), images
+                        prompt_text(ep, task, args.style, frames_ep, include_action=include_action,
+                                    oracle_context=args.oracle_context,
+                                    direction_input=direction_input),
+                        images,
                     ))
                     if use_pe:
                         d_depth, ep_depth = partner if partner is not None else (d, ep)
@@ -166,28 +196,57 @@ def main():
                         xyz.append(torch.cat([
                             frame_token_xyz(d_depth, ep_depth, frame=fr, view=vw,
                                             grid_thw_row=g, merge=merge)
-                            for (fr, vw), g in zip(pairs, grids)
+                            for (fr, vw), g in zip(pairs_ep, grids)
                         ]))
                 if pe is not None:
                     model._physwm_pe_xyz = torch.cat(xyz) if xyz else None
                 max_new = token_budget(args.style, max(len(ep.objects) for _, ep, _ in chunk))
                 answers = generate(model, processor, msgs, max_new)
                 for (d, ep, task), ans in zip(chunk, answers):
+                    frames_rec = (0, idp_frame(ep)) if task == IDP_TASK else frames
                     cur_objects, cur_extents = None, None
-                    if args.style == "chain3d":
+                    if task == IDP_TASK:
+                        idp_ans, parsed = parse_idp(ans, ep)
+                        rec = prediction_record(
+                            ep, task, {}, None, parsed, ans, frames_rec,
+                            image_mode=args.image_mode, style=args.style, lora=args.lora,
+                        )
+                        rec.pop("objects")
+                        rec["idp"] = idp_ans
+                    elif args.style == "ctx3d":
+                        cur_objects, cur_extents, objects, extents, ctx, sup, _pc, parsed = \
+                            parse_ctx3d(ans, ep)
+                        rec = prediction_record(
+                            ep, task, objects, extents, parsed, ans, frames_rec,
+                            image_mode=args.image_mode, style=args.style, lora=args.lora,
+                        )
+                        rec["action_context"] = ctx
+                        rec["support"] = sup
+                    elif args.style == "chain3d":
                         cur_objects, cur_extents, objects, extents, _pc, parsed = parse_chain3d(ans, ep)
+                        rec = prediction_record(
+                            ep, task, objects, extents, parsed, ans, frames_rec,
+                            image_mode=args.image_mode, style=args.style, lora=args.lora,
+                        )
                     elif args.style == "box3d":
                         objects, extents, parsed = parse_box3d(ans, ep)
+                        rec = prediction_record(
+                            ep, task, objects, extents, parsed, ans, frames_rec,
+                            image_mode=args.image_mode, style=args.style, lora=args.lora,
+                        )
                     else:
                         objects, parsed = parse_answer(ans, ep)
                         extents = None
-                    rec = prediction_record(
-                        ep, task, objects, extents, parsed, ans, frames,
-                        image_mode=args.image_mode, style=args.style, lora=args.lora,
-                    )
+                        rec = prediction_record(
+                            ep, task, objects, extents, parsed, ans, frames_rec,
+                            image_mode=args.image_mode, style=args.style, lora=args.lora,
+                        )
                     if cur_objects is not None:
                         rec["current_objects"] = cur_objects
                         rec["current_extents"] = cur_extents
+                    if task in ("B", NEXT_FRAME_TASK) and (args.oracle_context or direction_input != "text"):
+                        rec["direction_input"] = direction_input
+                        rec["oracle_context"] = args.oracle_context
                     f.write(json.dumps(rec) + "\n")
                 n_done += len(chunk)
     print(f"wrote {out_path} ({n_done} samples, {time.time() - t_start:.0f}s)")

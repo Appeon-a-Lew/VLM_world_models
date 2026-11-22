@@ -1,5 +1,11 @@
-"""Prompt / target construction for Task A (current 3D boxes), Task B (boxes 1 s after a push)
-and Task N (boxes at the next stored frame).
+"""Prompt / target construction for Task A (current 3D boxes), Task B (boxes 1 s after a push),
+Task N (boxes at the next stored frame) and Task I (inverse dynamics, research/PREREG.md).
+
+Task I shows the pre-action frame and the *fixed* early post-action frame (t = 0.1 s) and
+asks which object was acted on, in which camera-relative direction, and how strongly --
+or the explicit no-motion class when the target moved less than IDP_AMBIGUOUS_M. The
+input times are fixed, so the timestamps stated in the prompt carry no strength
+information (an adaptive rule would leak the answer into the clock; PREREG.md pins it).
 
 Answer styles:
 - "center": [{"label": ..., "center": [x, y, z]}]  -- used for SFT and as the default zero-shot prompt.
@@ -7,6 +13,13 @@ Answer styles:
             [{"bbox_3d": [x, y, z, xs, ys, zs, roll, pitch, yaw], "label": ...}]; only the centre is scored.
 - "box3d":  [{"label": ..., "center": [x, y, z], "extents": [ex, ey, ez]}] -- centre + full
             body-axis sizes in metres, camera frame; the phase-2 answer format.
+- "chain3d": {"current": [...], "future": [...]} -- Stage-1 chained answers.
+- "ctx3d":  {"current": [... with per-object "support" ...], "action_context": {...},
+            "future": [...]} -- the PCB-style physical-context arm. The action_context
+            payload is built by physwm/vlm/context.py and its format is frozen for the
+            whole M0/M1 ladder; ``oracle_context=True`` injects the simulator-provided
+            payload into forward-prediction prompts instead (never for task A, which is
+            a perception task and the context names the action target).
 
 Image modes (image-dependence test): normal | none (text only) | blank (uniform gray) | swap
 (image of another episode, chosen by the caller).
@@ -14,7 +27,8 @@ Image modes (image-dependence test): normal | none (text only) | blank (uniform 
 Frame/view order: images are listed frame-major, view-minor (``frames`` outer, ``views``
 inner); that is also the order of ``image_grid_thw`` rows and therefore of the merged
 tokens the xyz PE is indexed by. Task N always targets the first stored frame after the
-last input frame; multi-frame prompts state the input times explicitly.
+last input frame; multi-frame prompts state the input times explicitly. Task I always
+uses its own fixed frame pair regardless of the arm's ``--frames``.
 """
 
 from __future__ import annotations
@@ -28,11 +42,18 @@ from PIL import Image
 from physwm.eval.metrics import (NEXT_FRAME_TASK, TASK_TIME, gt_centers_cam, gt_extents,
                                  task_time)
 from physwm.schema import Episode
+from physwm.vlm.context import action_context, oracle_payload, support_map
 
 FRAME = (
     "Use the camera coordinate frame in metres: x points right, y points down, "
     "z points forward along the viewing direction."
 )
+
+IDP_TASK = "I"
+IDP_TIME = 0.1                      # s; fixed early post-action input frame (research/PREREG.md)
+IDP_AMBIGUOUS_M = 0.02              # m; target motion below this at t = IDP_TIME -> no-motion class
+IDP_STRENGTH_BINS = ((0.75, "weak"), (1.2, "medium"), (None, "strong"))   # by action.speed, m/s
+NO_MOTION_LABEL = "no clear motion"
 
 
 def _intrinsics(ep: Episode) -> str:
@@ -85,11 +106,72 @@ def _ask(ep: Episode, task: str, what: str, frames: tuple[int, ...] = (0,),
     raise ValueError(f"unknown task {task!r}")
 
 
+def idp_frame(ep: Episode) -> int:
+    """Input frame index of the fixed early post-action image (t = 0.1 s on the v3 grid)."""
+    return ep.frame_index_at(IDP_TIME)
+
+
+def idp_target(ep: Episode) -> dict:
+    """GT IDP answer: the target/direction/strength triple, or the explicit no-motion class.
+
+    Strength bins are pinned to absolute initial-speed thresholds (m/s) so they stay
+    meaningful on the OOD-force buckets (0.08-0.25 -> weak, 2.0-2.8 -> strong). Motion
+    support is measured, not predicted: the target's own displacement between t = 0 and
+    the fixed IDP frame decides the no-motion class.
+    """
+    moved = float(np.linalg.norm(
+        np.asarray(ep.state_at(IDP_TIME)[ep.action.target].pos)
+        - np.asarray(ep.state_at(0.0)[ep.action.target].pos)))
+    if moved < IDP_AMBIGUOUS_M:
+        return {"action": NO_MOTION_LABEL}
+    for hi, name in IDP_STRENGTH_BINS:
+        if hi is None or ep.action.speed < hi:
+            return {"target": ep.objects[ep.action.target].name,
+                    "direction": ep.action.direction_label, "strength": name}
+    raise AssertionError("unreachable strength bin")
+
+
+def _direction_line(ep: Episode, mode: str) -> str:
+    rotation = np.asarray(ep.camera.cam2world, dtype=float)[:3, :3]
+    if mode == "nominal":
+        column, sign = {"left": (0, -1), "right": (0, 1),
+                        "away": (2, 1), "toward": (2, -1)}[ep.action.direction_label]
+        world = rotation[:, column].copy()
+        world[2] = 0.
+        world *= sign / np.linalg.norm(world)
+    elif mode == "recorded":
+        world = np.asarray(ep.action.direction_world, dtype=float)
+    else:
+        raise ValueError(f"unknown direction input {mode!r}")
+    camera_vector = (rotation.T @ world).round(3)
+    camera_vector[camera_vector == 0] = 0.
+    coords = ", ".join(f"{component:.3f}" for component in camera_vector)
+    return f"Push direction as a unit vector in the camera frame [x, y, z]: [{coords}].\n"
+
+
 def prompt_text(ep: Episode, task: str, style: str = "center",
-                frames: tuple[int, ...] = (0,), include_action: bool = True) -> str:
-    """Prompt for one (episode, task); with several input frames it also states their times."""
+                frames: tuple[int, ...] = (0,), include_action: bool = True,
+                oracle_context: bool = False, direction_input: str = "text") -> str:
+    """Prompt for one (episode, task); with several input frames it also states their times.
+
+    ``oracle_context`` injects the simulator-provided action context into forward-prediction
+    prompts (tasks B/N, any style); task A never receives it (perception task; the context
+    names the action target). The direction_input option adds a nominal or recorded
+    camera-frame direction vector to forward prompts.
+    """
     frames = tuple(frames) if frames else (0,)
     names = ", ".join(o.name for o in ep.objects)
+    if task == IDP_TASK:
+        ask = ("Which object was acted on between the first and the second image, in which "
+               "camera-relative direction, and how strongly?")
+        fmt = ('Answer only with JSON: {"target": "<object>", "direction": '
+               '"left|right|away|toward", "strength": "weak|medium|strong"} -- or '
+               '{"action": "no clear motion"} if no object clearly moved.')
+        times = _input_times(ep, frames)
+        return (
+            f"A camera looks at objects on a table. {_intrinsics(ep)} {FRAME}\n"
+            f"Objects: {names}.\n{times}{ask}\n{fmt}"
+        )
     if style == "chain3d":
         t_cur = float(ep.frame_times[frames[-1]])
         t_fut = task_time(ep, task, frames)
@@ -105,6 +187,47 @@ def prompt_text(ep: Episode, task: str, style: str = "center",
             "center is the object centre in metres and extents are the full body-axis sizes "
             "(ex, ey, ez) in metres."
         )
+    elif style == "ctx3d":
+        t_cur = float(ep.frame_times[frames[-1]])
+        if task == "A":
+            ask = ("Report the 3D bounding box of each listed object as it is in the image, "
+                   "together with what each object rests on.")
+            fmt = (
+                'Answer only with a JSON object: {"current": [{"label": "<object>", '
+                '"center": [x, y, z], "extents": [ex, ey, ez], "support": "table|<object name>"}, ...]}. '
+                "center is the object centre in metres, extents are the full body-axis sizes "
+                "(ex, ey, ez) in metres, and support names the object or the table it rests on."
+            )
+        else:
+            t_fut = task_time(ep, task, frames)
+            if include_action:
+                prefix = f"Action: {ep.action.text}\n"
+                ask = (
+                    f"{prefix}First report the 3D bounding box of each listed object at the last "
+                    f"observed image (t = {t_cur:.1f} s) together with what each object rests on, "
+                    f"then describe the pre-action scene geometry -- the target's distance to the "
+                    f"table edge along the action and any objects in the path -- then predict the "
+                    f"3D bounding box of each listed object at t = {t_fut:.1f} s."
+                )
+            else:
+                ask = (
+                    f"Observe the motion across the frames. First report the 3D bounding box of "
+                    f"each listed object at the last observed image (t = {t_cur:.1f} s) together "
+                    f"with what each object rests on, then describe the pre-action scene geometry, "
+                    f"then predict the 3D bounding box of each listed object at t = {t_fut:.1f} s."
+                )
+            fmt = (
+                'Answer only with a JSON object: {"current": [{"label": "<object>", '
+                '"center": [x, y, z], "extents": [ex, ey, ez], "support": "table|<object name>"}, ...], '
+                '"action_context": {"target": "<object>", "direction": "left|right|away|toward", '
+                '"edge_distance_m": <number>, "obstacles": [{"label": "<object>", '
+                '"distance_m": <number>}, ...]}, "future": [{"label": "<object>", '
+                '"center": [x, y, z], "extents": [ex, ey, ez]}, ...]}. center is the object '
+                "centre in metres, extents are the full body-axis sizes (ex, ey, ez) in metres, "
+                "support names what each object rests on, edge_distance_m is the distance from "
+                "the target to the table edge along the action, and obstacles lists the objects "
+                "in the action path with their surface-to-surface distance in metres."
+            )
     elif style == "box3d":
         ask = _ask(ep, task, "3D bounding box", frames, include_action=include_action)
         fmt = (
@@ -126,20 +249,33 @@ def prompt_text(ep: Episode, task: str, style: str = "center",
         else:
             raise ValueError(style)
     times = f"{_input_times(ep, frames, include_action=include_action)}\n" if len(frames) > 1 else ""
+    # Oracle payload carries GT support alongside the action context, so a flat oracle
+    # result cannot hide a support-prediction failure (predicted support is scored
+    # separately by idpmetrics).
+    ctx_line = ""
+    if task != "A" and oracle_context:
+        ctx_line = f"Physical context: {json.dumps(oracle_payload(ep, float(ep.frame_times[frames[-1]])))}\n"
+    direction_line = ""
+    if include_action and task in ("B", NEXT_FRAME_TASK) and direction_input != "text":
+        direction_line = _direction_line(ep, direction_input)
     return (
         f"A camera looks at objects on a table. {_intrinsics(ep)} {FRAME}\n"
-        f"Objects: {names}.\n{times}{ask}\n{fmt}"
+        f"Objects: {names}.\n{times}{ask}\n{direction_line}{ctx_line}{fmt}"
     )
 
 
 def target_text(ep: Episode, task: str, style: str = "center",
                 frames: tuple[int, ...] = (0,)) -> str:
     """Ground-truth answer string; "box3d" adds full body-axis extents to the centres,
-    "chain3d" outputs {"current": [...at last input frame...], "future": [...at task_time...]}.
+    "chain3d" outputs {"current": [...at last input frame...], "future": [...at task_time...]},
+    "ctx3d" additionally emits the frozen action_context payload and per-object support,
+    and task I returns the GT inverse-dynamics answer.
 
     ``frames`` select the last input frame and task-N target time.
     """
     frames = tuple(frames) if frames else (0,)
+    if task == IDP_TASK:
+        return json.dumps(idp_target(ep))
     t = task_time(ep, task, frames)
     c = gt_centers_cam(ep, t)
     if style == "chain3d":
@@ -154,6 +290,28 @@ def target_text(ep: Episode, task: str, style: str = "center",
                 for i, o in enumerate(ep.objects)
             ]
         return json.dumps({"current": _box_list(c_cur), "future": _box_list(c)})
+    if style == "ctx3d":
+        t_cur = float(ep.frame_times[frames[-1]])
+        cur = gt_centers_cam(ep, t_cur)
+        e = gt_extents(ep)
+        sup = support_map(ep, t_cur)
+
+        def _cur(i, o):
+            return {"label": o.name,
+                    "center": [round(float(v), 3) for v in cur[i]],
+                    "extents": [round(float(v), 3) for v in e[i]],
+                    "support": sup[o.id]}
+
+        if task == "A":
+            return json.dumps({"current": [_cur(i, o) for i, o in enumerate(ep.objects)]})
+        return json.dumps({
+            "current": [_cur(i, o) for i, o in enumerate(ep.objects)],
+            "action_context": action_context(ep),
+            "future": [{"label": o.name,
+                        "center": [round(float(v), 3) for v in c[i]],
+                        "extents": [round(float(v), 3) for v in e[i]]}
+                       for i, o in enumerate(ep.objects)],
+        })
     if style == "box3d":
         e = gt_extents(ep)
         return json.dumps([
@@ -163,7 +321,8 @@ def target_text(ep: Episode, task: str, style: str = "center",
             for i, o in enumerate(ep.objects)
         ])
     if style != "center":
-        raise ValueError(f"target style {style!r} is not stored as text; use 'center', 'box3d', or 'chain3d'")
+        raise ValueError(f"target style {style!r} is not stored as text; "
+                         "use 'center', 'box3d', 'chain3d', or 'ctx3d'")
     return json.dumps([
         {"label": o.name, "center": [round(float(v), 3) for v in c[o.id]]} for o in ep.objects
     ])
