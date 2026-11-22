@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M0 push screen · World-model dashboard</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="results.css">
+</head>
+<body class="results-page">
+  <header class="topbar">
+    <a class="m0-link" href="../">← World-model dashboard</a>
+  </header>
+  <main class="results">
+    <h1>M0 push screen</h1>
+    <p class="introduction">We trained four recipes to forecast 3D boxes after a push.
+      Each ran for 3,750 optimizer steps with seed 1 and was evaluated on the same
+      100 matched scene families.</p>
+
+    <section class="result-card" aria-labelledby="screen-heading">
+      <h2 id="screen-heading">Matched-pair effect error</h2>
+      <p>None of the arms earned a second seed. The screen required at least
+        2.21 cm less error than forward-only, a paired 95% interval above zero,
+        and a passing missing-pair check. All arms had zero missing target pairs.</p>
+      <figure>
+        <a href="paired-screen.png"><img src="paired-screen.png" width="1496" height="578"
+          alt="All three confidence intervals cross zero. Every point estimate is below the 2.21 cm seed-2 threshold."></a>
+        <figcaption>Effect error measures how closely predicted endpoint changes match the simulator after reversing, halving, or doubling a push. The intervals resample scene families from seed 1.</figcaption>
+      </figure>
+      <div class="result-table" tabindex="0" role="region" aria-label="Matched-pair results table">
+        <table>
+          <thead><tr><th scope="col">Training recipe</th><th scope="col">Effect error</th><th scope="col">Reduction vs forward-only (95% CI)</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Forward-only</th><td>31.66 cm</td><td>Baseline</td></tr>
+            <tr><th scope="row">Inverse dynamics</th><td>31.14 cm</td><td>+0.52 cm [−1.21, +2.32]</td></tr>
+            <tr><th scope="row">Physical context</th><td>31.36 cm</td><td>+0.30 cm [−0.91, +1.63]</td></tr>
+            <tr><th scope="row">Both</th><td>33.17 cm</td><td>−1.51 cm [−3.47, +0.44]</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="result-card" aria-labelledby="training-heading">
+      <h2 id="training-heading">Training curves</h2>
+      <figure>
+        <a href="training.png"><img src="training.png" width="1496" height="1326" loading="lazy"
+          alt="Training loss decreases on all four runs. The shared learning-rate schedule warms up and decays. The runs finish at either 20,000 or 30,000 Task B examples."></a>
+        <figcaption>Faint lines show logged loss. Solid loss lines show a trailing average over nine log points. Loss covers the task mixture for each run. Forward-only and physical context saw 30,000 future-box examples each. Inverse dynamics and both saw 20,000 each. Only training loss was logged during the runs.</figcaption>
+      </figure>
+    </section>
+
+    <section class="result-card" aria-labelledby="force-heading">
+      <h2 id="force-heading">Out-of-range pushes</h2>
+      <figure>
+        <a href="force-buckets.png"><img src="force-buckets.png" width="1496" height="595" loading="lazy"
+          alt="A static prediction has the smallest error on weak pushes. Forward-only has the smallest error on strong pushes."></a>
+        <figcaption>Mean endpoint error of the pushed object, over 250 episodes per group. The weak and strong panels use different horizontal scales.</figcaption>
+      </figure>
+    </section>
+
+    <section class="result-card" aria-labelledby="action-heading">
+      <h2 id="action-heading">Response to a changed push</h2>
+      <figure>
+        <a href="action-response.png"><img src="action-response.png" width="1496" height="561" loading="lazy"
+          alt="For doubled pushes, simulator endpoints change by 64.3 cm. Model changes range from 15.5 to 19.3 cm."></a>
+        <figcaption>Each intervention holds the scene fixed. When push strength doubled, the simulator endpoint changed by 64.3 cm on average. Model predictions moved by 15.5–19.3 cm.</figcaption>
+      </figure>
+    </section>
+
+    <section class="result-card" aria-labelledby="prompt-heading">
+      <h2 id="prompt-heading">Follow-up prompt diagnostic</h2>
+      <figure>
+        <a href="prompt-diagnostic.png"><img src="prompt-diagnostic.png" width="1496" height="569" loading="lazy"
+          alt="Neither checkpoint shows lower mean error with the recorded direction plus context than with the original text."></a>
+        <figcaption>We reran the same scene families through two saved checkpoints with different action prompts. Providing the recorded direction or simulator context produced no statistically detectable gain. Every paired 95% interval included zero.</figcaption>
+      </figure>
+    </section>
+  </main>
+</body>
+</html>

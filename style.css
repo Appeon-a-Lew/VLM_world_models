@@ -79,6 +79,17 @@ code, pre, .mono {
 .tab:hover { color: var(--text); background: var(--bg-3); }
 .tab.active { color: var(--text); background: var(--bg-3); border-color: var(--line-2); }
 
+.m0-link {
+  align-self: center;
+  padding: 6px 10px;
+  border-radius: 7px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.m0-link:hover, .m0-link:focus-visible { background: var(--bg-3); text-decoration: underline; }
+
 .status {
   margin-left: auto;
   color: var(--muted);
@@ -474,6 +485,7 @@ select:focus { border-color: var(--accent); }
   .content { overflow: visible; }
   .topbar { gap: 10px; padding: 0 10px; }
   .brand { font-size: 12px; }
+  .tabs .tab, .m0-link { padding-inline: 6px; }
   .status { display: none; }
   .viewer-panel, .metrics-panel { padding: 12px; }
 }
