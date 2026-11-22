@@ -27,6 +27,8 @@
 .results figure a { display: block; }
 .results figure img { display: block; width: 100%; height: auto; }
 .results figcaption { margin-top: 10px; font-size: 14px; }
+.results details { margin-top: 12px; }
+.results summary { width: fit-content; color: var(--accent); cursor: pointer; }
 .result-table { overflow-x: auto; margin-top: 12px; }
 .result-table table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .result-table th, .result-table td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; }

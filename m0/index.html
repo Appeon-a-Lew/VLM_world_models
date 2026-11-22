@@ -17,8 +17,31 @@
       Each ran for 3,750 optimizer steps with seed 1 and was evaluated on the same
       100 matched scene families.</p>
 
+    <section class="result-card" id="effect-skill" aria-labelledby="skill-heading">
+      <h2 id="skill-heading">Matched-pair skill by effect size</h2>
+      <p>Skill is one minus total model error divided by total no-change baseline error.
+        A score of 100% is perfect, 0% ties the baseline, and a negative score is worse.
+        Each group contains 100 pairs, sorted by the size of the simulator's endpoint change.</p>
+      <figure>
+        <a href="effect-skill.png"><img src="effect-skill.png" width="1496" height="629"
+          alt="All recipes beat the no-change baseline for medium and strong effects. The weak-effect estimates have wider confidence intervals."></a>
+        <figcaption>Intervals resample scene families from seed 1. The cutoffs use the ground-truth endpoint change between each original and altered push.</figcaption>
+      </figure>
+      <div class="result-table" tabindex="0" role="region" aria-label="Skill by effect size">
+        <table>
+          <thead><tr><th scope="col">Training recipe</th><th scope="col">All pairs</th><th scope="col">Weak<br>&lt;13.9 cm</th><th scope="col">Medium<br>13.9–46.0 cm</th><th scope="col">Strong<br>≥46.0 cm</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Forward-only</th><td>28.3%</td><td>18.3%</td><td>40.6%</td><td>25.9%</td></tr>
+            <tr><th scope="row">Inverse dynamics</th><td>29.5%</td><td>25.1%</td><td>44.1%</td><td>26.1%</td></tr>
+            <tr><th scope="row">Physical context</th><td>29.0%</td><td>27.2%</td><td>42.3%</td><td>25.8%</td></tr>
+            <tr><th scope="row">Both</th><td>24.9%</td><td>17.1%</td><td>36.8%</td><td>22.4%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="result-card" aria-labelledby="screen-heading">
-      <h2 id="screen-heading">Matched-pair effect error</h2>
+      <h2 id="screen-heading">Preregistered screen in centimeters</h2>
       <p>None of the arms earned a second seed. The screen required at least
         2.21 cm less error than forward-only, a paired 95% interval above zero,
         and a passing missing-pair check. All arms had zero missing target pairs.</p>
@@ -51,11 +74,38 @@
 
     <section class="result-card" aria-labelledby="force-heading">
       <h2 id="force-heading">Out-of-range pushes</h2>
+      <p>All four models trail the static baseline for weak pushes and beat it for strong pushes.
+        These groups use push speed. The matched-pair groups above use the size of the simulator's endpoint change.</p>
       <figure>
-        <a href="force-buckets.png"><img src="force-buckets.png" width="1496" height="595" loading="lazy"
-          alt="A static prediction has the smallest error on weak pushes. Forward-only has the smallest error on strong pushes."></a>
-        <figcaption>Mean endpoint error of the pushed object, over 250 episodes per group. The weak and strong panels use different horizontal scales.</figcaption>
+        <a href="force-skill.png"><img src="force-skill.png" width="1496" height="595" loading="lazy"
+          alt="All four models have negative skill on weak pushes and positive skill on strong pushes."></a>
+        <figcaption>Skill is based on the pushed object's endpoint over 250 episodes per group. The panels use different horizontal scales.</figcaption>
       </figure>
+      <details>
+        <summary>View endpoint errors in centimeters</summary>
+        <figure>
+          <a href="force-buckets.png"><img src="force-buckets.png" width="1496" height="595" loading="lazy"
+            alt="A static prediction has the smallest error on weak pushes. Forward-only has the smallest error on strong pushes."></a>
+        </figure>
+      </details>
+    </section>
+
+    <section class="result-card" aria-labelledby="invariance-heading">
+      <h2 id="invariance-heading">Sensitivity to appearance and camera changes</h2>
+      <p>Recoloring or moving the camera leaves the simulator's physics unchanged.
+        Each percentage is the share of 100 pairs where the predicted target endpoint changed
+        by at most 2 cm in world coordinates.</p>
+      <div class="result-table" tabindex="0" role="region" aria-label="Prediction changes within 2 centimeters">
+        <table>
+          <thead><tr><th scope="col">Training recipe</th><th scope="col">Recolor</th><th scope="col">Camera elevation</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Forward-only</th><td>66%</td><td>19%</td></tr>
+            <tr><th scope="row">Inverse dynamics</th><td>66%</td><td>17%</td></tr>
+            <tr><th scope="row">Physical context</th><td>61%</td><td>16%</td></tr>
+            <tr><th scope="row">Both</th><td>67%</td><td>21%</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="result-card" aria-labelledby="action-heading">
@@ -72,7 +122,7 @@
       <figure>
         <a href="prompt-diagnostic.png"><img src="prompt-diagnostic.png" width="1496" height="569" loading="lazy"
           alt="Neither checkpoint shows lower mean error with the recorded direction plus context than with the original text."></a>
-        <figcaption>We reran the same scene families through two saved checkpoints with different action prompts. Providing the recorded direction or simulator context produced no statistically detectable gain. Every paired 95% interval included zero.</figcaption>
+        <figcaption>We reran the same scene families through two saved checkpoints with different action prompts. The right axis shows skill on the same pairs. Providing the recorded direction or simulator context produced no statistically detectable gain. Every paired 95% interval included zero.</figcaption>
       </figure>
     </section>
   </main>
